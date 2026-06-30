@@ -398,10 +398,10 @@ function PageDashboard({db,setDb,onNavigate}){
           </div>}
         </div>
         <div style={{textAlign:"right"}}>
-          <div style={{fontSize:32,fontWeight:800,color:"#fff",letterSpacing:"-1.5px",lineHeight:1}}>{hora}</div>
-          <div style={{fontSize:12,color:"rgba(255,255,255,0.3)",marginTop:4}}>
-            {now.toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit",year:"numeric"})}
+          <div style={{fontSize:11,color:"rgba(255,255,255,0.4)",marginBottom:4}}>
+            {now.toLocaleDateString("pt-BR",{day:"2-digit",month:"short",year:"numeric"})}
           </div>
+          <div style={{fontSize:26,fontWeight:800,color:"#fff",letterSpacing:"-1px",lineHeight:1}}>{hora}</div>
         </div>
       </div>
 
@@ -417,27 +417,24 @@ function PageDashboard({db,setDb,onNavigate}){
       {/* 4 KPIs operacionais — clicáveis, levam direto para Pedidos já filtrado */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14}}>
         {[
-          {label:"Pedidos a Fazer",icon:"📦",value:produzir,color:"#5c2030",top:"#5c2030",status:"A Fazer"},
-          {label:"Em Transporte",  icon:"✈️", value:emTransp, color:"#2563eb",top:"#2563eb",status:"Em Transporte"},
-          {label:"Entregue",       icon:"✅", value:entregue, color:"#16a34a",top:"#16a34a",status:"Entregue"},
-          {label:"Atrasados",      icon:"🚨", value:atrasados,color:"#dc2626",top:"#dc2626",status:"Cancelado"},
-        ].map(({label,icon,value,color,top,status})=>{
+          {label:"Pedidos a Fazer",icon:"📦",value:produzir,color:"#a16207",status:"A Fazer"},
+          {label:"Em Transporte",  icon:"🚚", value:emTransp, color:"#2563eb",status:"Em Transporte"},
+          {label:"Entregue",       icon:"✅", value:entregue, color:"#16a34a",status:"Entregue"},
+          {label:"Atrasados",      icon:"🔴", value:atrasados,color:"#dc2626",status:"Cancelado"},
+        ].map(({label,icon,value,color,status})=>{
           const [h,setH]=useState(false);
           return(
             <div key={label} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)}
               onClick={()=>onNavigate&&onNavigate("pedidos",status)}
-              style={{background:"#fff",border:"1px solid #e5e7eb",borderTop:`4px solid ${top}`,
-                borderRadius:12,padding:"16px 18px",transition:"all 0.18s",cursor:"pointer",
-                transform:h?"translateY(-3px)":"none",
-                boxShadow:h?"0 10px 28px rgba(0,0,0,0.1)":"0 1px 4px rgba(0,0,0,0.05)"}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-                <div>
-                  <div style={{fontSize:11,fontWeight:700,color:"#9ca3af",textTransform:"uppercase",
-                    letterSpacing:"0.5px",marginBottom:8}}>{label}</div>
-                  <div style={{fontSize:26,fontWeight:800,color,lineHeight:1}}>{value}</div>
-                </div>
-                <div style={{width:38,height:38,borderRadius:10,background:`${color}15`,
-                  display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>{icon}</div>
+              style={{background:"#fff",border:"1px solid #e5e7eb",
+                borderRadius:10,padding:"14px 16px",transition:"all 0.18s",cursor:"pointer",
+                transform:h?"translateY(-2px)":"none",
+                boxShadow:h?"0 8px 22px rgba(0,0,0,0.08)":"0 1px 3px rgba(0,0,0,0.04)"}}>
+              <div style={{fontSize:22,fontWeight:800,color,lineHeight:1,marginBottom:6}}>{value}</div>
+              <div style={{display:"flex",alignItems:"center",gap:6}}>
+                <span style={{fontSize:13,lineHeight:1}}>{icon}</span>
+                <span style={{fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",
+                  letterSpacing:"0.4px"}}>{label}</span>
               </div>
             </div>
           );
