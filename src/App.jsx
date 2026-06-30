@@ -1057,10 +1057,11 @@ const ICONS = {
   bell:<><path d="M6 8a6 6 0 1112 0c0 4 1.5 5.5 1.5 6.5H4.5C4.5 13.5 6 12 6 8z"/><path d="M9.5 18a2.5 2.5 0 005 0"/></>,
   logout:<><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></>,
   user:<><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></>,
+  moon:<path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"/>,
 };
 
-function MenuIco({k,active}){
-  return <Ico path={ICONS[k]} size={17} color={active?"#fff":"#9ca3af"} strokeW={1.8}/>;
+function MenuIco({k,active,escuro}){
+  return <Ico path={ICONS[k]} size={17} color={active?"#fff":(escuro?"#6b7280":"#9ca3af")} strokeW={1.8}/>;
 }
 
 // ── LOGIN ────────────────────────────────────────────────────
@@ -1131,53 +1132,69 @@ const MENU_GESTAO=[
   {k:"tarefas",l:"Tarefas",ico:"tarefas"},
 ];
 
-function MenuItem({item,active,onClick}){
+function MenuItem({item,active,onClick,escuro}){
   const [h,setH]=useState(false);
+  const corAtivo = "#dc2626"; // vermelho T11, no espírito do destaque do Shopee Control
+  const bg = active ? corAtivo : (h ? (escuro?"rgba(255,255,255,0.06)":"#f3f4f6") : "transparent");
+  const txt = active ? "#fff" : (escuro ? "#cbd5e1" : "#374151");
   return(
     <div onClick={onClick} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)}
       style={{display:"flex",alignItems:"center",gap:11,padding:"10px 16px",cursor:"pointer",
-        borderRadius:8,margin:"2px 10px",background:active?"#111":h?"#f3f4f6":"transparent",
-        transition:"all 0.15s"}}>
-      <MenuIco k={item.ico} active={active}/>
-      <span style={{fontSize:13,fontWeight:active?700:500,color:active?"#fff":"#374151"}}>{item.l}</span>
+        borderRadius:8,margin:"2px 10px",background:bg,transition:"all 0.15s"}}>
+      <MenuIco k={item.ico} active={active} escuro={escuro}/>
+      <span style={{fontSize:13,fontWeight:active?700:500,color:txt}}>{item.l}</span>
     </div>
   );
 }
 
-function MenuLabel({children}){
-  return<div style={{fontSize:10,fontWeight:800,color:"#9ca3af",textTransform:"uppercase",
+function MenuLabel({children,escuro}){
+  return<div style={{fontSize:10,fontWeight:800,color:escuro?"#6b7280":"#9ca3af",textTransform:"uppercase",
     letterSpacing:"0.8px",padding:"18px 20px 6px"}}>{children}</div>;
 }
 
-function Sidebar({page,setPage,onLogout,open,onCloseMobile}){
+function Sidebar({page,setPage,onLogout,open,onCloseMobile,escuro,setEscuro}){
   const ir=k=>{setPage(k);onCloseMobile&&onCloseMobile();};
+  const [hDark,setHDark]=useState(false);
+  const bgSide = escuro ? "#13131a" : "#fff";
+  const borderSide = escuro ? "1px solid #24242e" : "1px solid #e5e7eb";
   return(
-    <div style={{width:230,minWidth:230,background:"#fff",borderRight:"1px solid #e5e7eb",
-      display:"flex",flexDirection:"column",height:"100vh",flexShrink:0,
-      position:"sticky",top:0,alignSelf:"flex-start",overflowY:"auto"}}>
+    <div style={{width:230,minWidth:230,background:bgSide,borderRight:borderSide,
+      display:"flex",flexDirection:"column",height:"100vh",flexShrink:0,overflowY:"auto"}}>
       <div style={{display:"flex",alignItems:"center",gap:10,padding:"22px 20px 18px"}}>
-        <div style={{width:38,height:38,borderRadius:10,background:"#111",display:"flex",
+        <div style={{width:38,height:38,borderRadius:10,background:"#dc2626",display:"flex",
           alignItems:"center",justifyContent:"center",fontSize:18}}>⚽</div>
         <div>
-          <div style={{fontSize:15,fontWeight:900,color:"#111",letterSpacing:"-0.3px"}}>T11 Sports</div>
+          <div style={{fontSize:15,fontWeight:900,color:escuro?"#fff":"#111",letterSpacing:"-0.3px"}}>T11 Sports</div>
           <div style={{fontSize:9.5,fontWeight:700,color:"#9ca3af",letterSpacing:"0.5px"}}>GESTÃO DA LOJA</div>
         </div>
       </div>
       <div style={{flex:1,overflowY:"auto",paddingBottom:10}}>
-        <MenuLabel>Principal</MenuLabel>
-        {MENU_PRINCIPAL.map(it=><MenuItem key={it.k} item={it} active={page===it.k} onClick={()=>ir(it.k)}/>)}
-        <MenuLabel>Financeiro</MenuLabel>
-        {MENU_FINANCEIRO.map(it=><MenuItem key={it.k} item={it} active={page===it.k} onClick={()=>ir(it.k)}/>)}
-        <MenuLabel>Gestão</MenuLabel>
-        {MENU_GESTAO.map(it=><MenuItem key={it.k} item={it} active={page===it.k} onClick={()=>ir(it.k)}/>)}
+        <MenuLabel escuro={escuro}>Principal</MenuLabel>
+        {MENU_PRINCIPAL.map(it=><MenuItem key={it.k} item={it} active={page===it.k} onClick={()=>ir(it.k)} escuro={escuro}/>)}
+        <MenuLabel escuro={escuro}>Financeiro</MenuLabel>
+        {MENU_FINANCEIRO.map(it=><MenuItem key={it.k} item={it} active={page===it.k} onClick={()=>ir(it.k)} escuro={escuro}/>)}
+        <MenuLabel escuro={escuro}>Gestão</MenuLabel>
+        {MENU_GESTAO.map(it=><MenuItem key={it.k} item={it} active={page===it.k} onClick={()=>ir(it.k)} escuro={escuro}/>)}
+        <div onClick={()=>setEscuro(e=>!e)} onMouseEnter={()=>setHDark(true)} onMouseLeave={()=>setHDark(false)}
+          style={{display:"flex",alignItems:"center",gap:11,padding:"10px 16px",cursor:"pointer",
+            borderRadius:8,margin:"18px 10px 2px",
+            background:hDark?(escuro?"rgba(255,255,255,0.06)":"#f3f4f6"):"transparent",transition:"all 0.15s"}}>
+          <Ico path={ICONS.moon} size={17} color={escuro?"#fbbf24":"#9ca3af"} strokeW={1.8}/>
+          <span style={{fontSize:13,fontWeight:500,color:escuro?"#cbd5e1":"#374151",flex:1}}>Modo Escuro</span>
+          <div style={{width:34,height:18,borderRadius:10,background:escuro?"#dc2626":"#d1d5db",
+            position:"relative",transition:"all 0.2s"}}>
+            <div style={{width:14,height:14,borderRadius:"50%",background:"#fff",position:"absolute",
+              top:2,left:escuro?18:2,transition:"all 0.2s",boxShadow:"0 1px 3px rgba(0,0,0,0.3)"}}/>
+          </div>
+        </div>
       </div>
-      <div style={{borderTop:"1px solid #f3f4f6",padding:"14px 16px",display:"flex",
+      <div style={{borderTop:escuro?"1px solid #24242e":"1px solid #f3f4f6",padding:"14px 16px",display:"flex",
         alignItems:"center",gap:10}}>
-        <div style={{width:34,height:34,borderRadius:"50%",background:"#111",color:"#fff",
+        <div style={{width:34,height:34,borderRadius:"50%",background:"#dc2626",color:"#fff",
           display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:13,
           flexShrink:0}}>F</div>
         <div style={{flex:1,minWidth:0}}>
-          <div style={{fontSize:13,fontWeight:700,color:"#111"}}>Fabrício</div>
+          <div style={{fontSize:13,fontWeight:700,color:escuro?"#fff":"#111"}}>Fabrício</div>
           <div style={{fontSize:11,color:"#9ca3af"}}>Administrador</div>
         </div>
         <button onClick={onLogout} title="Sair"
@@ -1195,16 +1212,16 @@ const PAGE_TITLES={
   custo:"Custo / Lucro", caixa:"Caixa", tarefas:"Tarefas", fornecedor:"Fornecedores",
 };
 
-function Topbar({page,busca,setBusca,onRefresh}){
+function Topbar({page,busca,setBusca,onRefresh,escuro}){
   const [girando,setGirando]=useState(false);
   const refresh=()=>{setGirando(true);onRefresh&&onRefresh();setTimeout(()=>setGirando(false),500);};
   return(
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:16,
-      padding:"16px 28px",borderBottom:"1px solid #e5e7eb",background:"#fff",
-      position:"sticky",top:0,zIndex:50}}>
+      padding:"16px 28px",borderBottom:escuro?"1px solid #24242e":"1px solid #e5e7eb",
+      background:escuro?"#13131a":"#fff",position:"sticky",top:0,zIndex:50}}>
       <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
-        <div style={{width:4,height:20,background:"#111",borderRadius:2}}/>
-        <span style={{fontSize:17,fontWeight:800,color:"#111",whiteSpace:"nowrap"}}>{PAGE_TITLES[page]||""}</span>
+        <div style={{width:4,height:20,background:"#dc2626",borderRadius:2}}/>
+        <span style={{fontSize:17,fontWeight:800,color:escuro?"#fff":"#111",whiteSpace:"nowrap"}}>{PAGE_TITLES[page]||""}</span>
       </div>
       <div style={{display:"flex",alignItems:"center",gap:10,flex:1,justifyContent:"flex-end"}}>
         <div style={{position:"relative",width:240,maxWidth:"40vw"}}>
@@ -1212,21 +1229,24 @@ function Topbar({page,busca,setBusca,onRefresh}){
             <Ico path={ICONS.search} size={15}/>
           </div>
           <input value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Buscar pedidos, produtos..."
-            style={{...INP,paddingLeft:34,fontSize:12.5}}/>
+            style={{...INP,paddingLeft:34,fontSize:12.5,
+              background:escuro?"#1c1c26":"#fff",borderColor:escuro?"#2e2e3a":"#d1d5db",
+              color:escuro?"#e5e7eb":"#111"}}/>
         </div>
         <button onClick={refresh} title="Atualizar"
           style={{display:"flex",alignItems:"center",gap:6,padding:"8px 12px",borderRadius:8,
-            border:"1px solid #d1d5db",background:"#fff",cursor:"pointer",fontSize:12,fontWeight:700,
-            color:"#374151",whiteSpace:"nowrap"}}>
+            border:escuro?"1px solid #2e2e3a":"1px solid #d1d5db",background:escuro?"#1c1c26":"#fff",
+            cursor:"pointer",fontSize:12,fontWeight:700,
+            color:escuro?"#cbd5e1":"#374151",whiteSpace:"nowrap"}}>
           <span style={{display:"flex",transition:"transform 0.5s",transform:girando?"rotate(360deg)":"none"}}>
             <Ico path={ICONS.refresh} size={15}/>
           </span>
           Atualizar
         </button>
         <div style={{display:"flex",alignItems:"center",gap:7,padding:"6px 10px 6px 8px",
-          borderRadius:20,background:"#f9fafb",border:"1px solid #e5e7eb"}}>
+          borderRadius:20,background:escuro?"#1c1c26":"#f9fafb",border:escuro?"1px solid #2e2e3a":"1px solid #e5e7eb"}}>
           <span style={{width:8,height:8,borderRadius:"50%",background:"#16a34a"}}/>
-          <span style={{fontSize:12,fontWeight:700,color:"#374151"}}>Fabrício</span>
+          <span style={{fontSize:12,fontWeight:700,color:escuro?"#cbd5e1":"#374151"}}>Fabrício</span>
         </div>
       </div>
     </div>
@@ -1267,6 +1287,9 @@ export default function App(){
   const [busca,setBusca]=useState("");
   const [modalPedido,setModalPedido]=useState(null);
   const [modalProduto,setModalProduto]=useState(null);
+  const [escuro,setEscuro]=useState(()=>{try{return localStorage.getItem("t11_escuro")==="1";}catch(_){return false;}});
+
+  useEffect(()=>{try{localStorage.setItem("t11_escuro",escuro?"1":"0");}catch(_){}},[escuro]);
 
   useEffect(()=>{saveDB(db);},[db]);
 
@@ -1278,8 +1301,8 @@ export default function App(){
     const style=document.createElement("style");
     style.id=id;
     style.textContent=`
-      html,body{margin:0;padding:0;height:100%;width:100%;}
-      #root,#app,body>div:first-child{min-height:100vh;width:100%;}
+      html,body{margin:0;padding:0;height:100%;width:100%;overflow:hidden;}
+      #root,#app,body>div:first-child{height:100%;width:100%;}
       *{box-sizing:border-box;}
     `;
     document.head.appendChild(style);
@@ -1330,11 +1353,13 @@ export default function App(){
   };
 
   return(
-    <div style={{display:"flex",width:"100%",minHeight:"100vh",background:"#f6f7f9",
+    <div style={{display:"flex",width:"100%",height:"100vh",overflow:"hidden",
+      background:escuro?"#0b0b0f":"#f6f7f9",
       fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"}}>
-      <Sidebar page={page} setPage={setPage} onLogout={logout}/>
-      <div style={{flex:"1 1 auto",minWidth:0,width:"100%",display:"flex",flexDirection:"column"}}>
-        <Topbar page={page} busca={busca} setBusca={setBusca} onRefresh={()=>setDb(loadDB())}/>
+      <Sidebar page={page} setPage={setPage} onLogout={logout} escuro={escuro} setEscuro={setEscuro}/>
+      <div style={{flex:"1 1 auto",minWidth:0,width:"100%",display:"flex",flexDirection:"column",
+        height:"100vh",overflowY:"auto"}}>
+        <Topbar page={page} busca={busca} setBusca={setBusca} onRefresh={()=>setDb(loadDB())} escuro={escuro}/>
         <BuscaResultados resultado={resultadoBusca} onClose={()=>setBusca("")}/>
         <div style={{padding:"20px 28px 48px",flex:1,width:"100%",boxSizing:"border-box"}}>
           {renderPage()}
