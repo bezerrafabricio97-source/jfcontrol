@@ -2,7 +2,8 @@
 import { useState, useEffect, useMemo } from "react";
 
 const AUTH = { usuario: "fabricio", senha: "fabricio123" };
-const DB_KEY = "t11sports_v6";
+const DB_KEY = "jfcontrol_db";
+const DB_KEY_LEGACY_CANDIDATES = ["jfcontrol_db","t11sports_v6","t11_db","jfcontrol"];
 const TAMANHOS = ["P","M","G","GG","XGG"];
 const TIMES = ["Bahia","Vitória","Flamengo","Corinthians","São Paulo","Palmeiras","Vasco","Outro"];
 const UNIFORMES = ["Uniforme 1","Uniforme 2","Goleiro","Treino"];
@@ -52,8 +53,42 @@ function estoqueInicial(){
 const DB0={produtos:[],pedidos:[],caixa:[],tarefas:[],pedidosFornecedor:[],
   meta:{pedidos:30,receita:3600,lucro:1500,posts:0,futebol:0},nextId:100};
 
-function loadDB(){try{const r=localStorage.getItem(DB_KEY);if(r)return JSON.parse(r);}catch(_){}
-  const db=JSON.parse(JSON.stringify(DB0));db.produtos=estoqueInicial();return db;}
+// Mapeia status antigos para os status atuais do app, sem perder nenhum pedido
+const STATUS_MIGRACAO={
+  "Produzir":"A Fazer","produzir":"A Fazer",
+  "Entregar":"Pedido Feito","entregar":"Pedido Feito",
+  "Enviado":"Entregue","enviado":"Entregue",
+  "Atrasado":"Cancelado","atrasado":"Cancelado",
+};
+function migrarDB(db){
+  const out={...DB0,...db};
+  out.produtos=(out.produtos||[]).map(p=>({qtdMin:1,...p}));
+  out.pedidos=(out.pedidos||[]).map(p=>({
+    ...p,
+    status: ST_PEDIDO.includes(p.status) ? p.status : (STATUS_MIGRACAO[p.status]||"A Fazer"),
+  }));
+  out.caixa=out.caixa||[];
+  out.tarefas=out.tarefas||[];
+  out.pedidosFornecedor=out.pedidosFornecedor||[];
+  out.meta={...DB0.meta,...(out.meta||{})};
+  out.nextId=out.nextId||100;
+  return out;
+}
+
+function loadDB(){
+  try{
+    const r=localStorage.getItem(DB_KEY);
+    if(r)return migrarDB(JSON.parse(r));
+  }catch(_){}
+  // Fallback: procura em chaves antigas conhecidas, caso a principal esteja vazia
+  for(const k of DB_KEY_LEGACY_CANDIDATES){
+    try{
+      const r=localStorage.getItem(k);
+      if(r)return migrarDB(JSON.parse(r));
+    }catch(_){}
+  }
+  const db=JSON.parse(JSON.stringify(DB0));db.produtos=estoqueInicial();return db;
+}
 function saveDB(db){try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(_){}}
 
 // ── ESTILOS BASE ─────────────────────────────────────────────
@@ -1094,7 +1129,6 @@ const MENU_FINANCEIRO=[
 ];
 const MENU_GESTAO=[
   {k:"tarefas",l:"Tarefas",ico:"tarefas"},
-  {k:"fornecedor",l:"Fornecedores",ico:"fornecedor"},
 ];
 
 function MenuItem({item,active,onClick}){
@@ -1119,8 +1153,8 @@ function Sidebar({page,setPage,onLogout,open,onCloseMobile}){
   const ir=k=>{setPage(k);onCloseMobile&&onCloseMobile();};
   return(
     <div style={{width:230,minWidth:230,background:"#fff",borderRight:"1px solid #e5e7eb",
-      display:"flex",flexDirection:"column",height:"100vh",position:"sticky",top:0,
-      transform:open?"translateX(0)":undefined}}>
+      display:"flex",flexDirection:"column",height:"100vh",flexShrink:0,
+      position:"sticky",top:0,alignSelf:"flex-start",overflowY:"auto"}}>
       <div style={{display:"flex",alignItems:"center",gap:10,padding:"22px 20px 18px"}}>
         <div style={{width:38,height:38,borderRadius:10,background:"#111",display:"flex",
           alignItems:"center",justifyContent:"center",fontSize:18}}>⚽</div>
@@ -1236,6 +1270,21 @@ export default function App(){
 
   useEffect(()=>{saveDB(db);},[db]);
 
+  // Garante que a página ocupe 100% da tela e role corretamente,
+  // sem precisar editar o index.html/CSS global do projeto.
+  useEffect(()=>{
+    const id="t11-global-reset";
+    if(document.getElementById(id))return;
+    const style=document.createElement("style");
+    style.id=id;
+    style.textContent=`
+      html,body{margin:0;padding:0;height:100%;width:100%;}
+      #root,#app,body>div:first-child{min-height:100vh;width:100%;}
+      *{box-sizing:border-box;}
+    `;
+    document.head.appendChild(style);
+  },[]);
+
   const resultadoBusca=useBuscaGlobal(db,busca);
 
   const login=()=>{try{localStorage.setItem("t11_logado","1");}catch(_){}setLogado(true);};
@@ -1281,13 +1330,13 @@ export default function App(){
   };
 
   return(
-    <div style={{display:"flex",minHeight:"100vh",background:"#f6f7f9",
+    <div style={{display:"flex",width:"100%",minHeight:"100vh",background:"#f6f7f9",
       fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"}}>
       <Sidebar page={page} setPage={setPage} onLogout={logout}/>
-      <div style={{flex:1,minWidth:0,display:"flex",flexDirection:"column"}}>
+      <div style={{flex:"1 1 auto",minWidth:0,width:"100%",display:"flex",flexDirection:"column"}}>
         <Topbar page={page} busca={busca} setBusca={setBusca} onRefresh={()=>setDb(loadDB())}/>
         <BuscaResultados resultado={resultadoBusca} onClose={()=>setBusca("")}/>
-        <div style={{padding:"20px 28px 40px",flex:1}}>
+        <div style={{padding:"20px 28px 48px",flex:1,width:"100%",boxSizing:"border-box"}}>
           {renderPage()}
         </div>
       </div>
