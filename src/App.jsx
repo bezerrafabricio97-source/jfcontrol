@@ -355,8 +355,6 @@ function FormProduto({inicial,onSave,onClose}){
 // ── DASHBOARD ────────────────────────────────────────────────
 function PageDashboard({db,setDb,onNavigate}){
   const [mesSel,setMesSel]=useState(mesAtual());
-  const [editMeta,setEditMeta]=useState(false);
-  const [metaTemp,setMetaTemp]=useState({...db.meta});
   const meses=useMemo(()=>{const s=new Set(db.pedidos.map(p=>p.data?.slice(0,7)).filter(Boolean));s.add(mesAtual());return[...s].sort().reverse();},[db.pedidos]);
   const pm=db.pedidos.filter(p=>p.data?.startsWith(mesSel));
   const fat=pm.reduce((a,p)=>a+(p.precoVenda||0)*(p.qtd||1),0);
@@ -469,12 +467,10 @@ function PageDashboard({db,setDb,onNavigate}){
       </Section>
 
       {/* Metas */}
-      <Section title="🎯 Metas" action={
-        <Btn v="sec" onClick={()=>{setMetaTemp({...db.meta});setEditMeta(true);}}>✏ Editar Metas</Btn>
-      }>
+      <Section title="🎯 Metas">
         {metasAtivas.length===0?(
           <div style={{textAlign:"center",padding:"20px",color:"#9ca3af",fontSize:13}}>
-            Nenhuma meta definida. Clique em <strong>Editar Metas</strong> para configurar.
+            Nenhuma meta definida. Configure as metas na página de Pedidos.
           </div>
         ):(
           <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(metasAtivas.length,3)},1fr)`,gap:14}}>
@@ -502,31 +498,6 @@ function PageDashboard({db,setDb,onNavigate}){
               );
             })}
           </div>
-        )}
-      </Section>
-
-      {/* IA */}
-      <Section title="🏆 Análise de Vendas (IA)">
-        {topVendas.length===0?<Empty msg="Cadastre pedidos para ver análise." icon="📊"/>:(
-          <>
-            <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:14}}>
-              {topVendas.map(([nome,qtd],i)=>(
-                <div key={nome} style={{display:"flex",alignItems:"center",gap:12,padding:"8px 0",
-                  borderBottom:i<topVendas.length-1?"1px solid #f5f5f5":"none"}}>
-                  <div style={{width:28,height:28,borderRadius:"50%",
-                    background:i===0?"#111":"#f3f4f6",color:i===0?"#fff":"#6b7280",
-                    display:"flex",alignItems:"center",justifyContent:"center",
-                    fontSize:12,fontWeight:800,flexShrink:0}}>{i+1}</div>
-                  <div style={{flex:1}}>
-                    <div style={{fontWeight:700,fontSize:13,color:"#111"}}>{nome}</div>
-                    <Prog value={qtd} max={topVendas[0][1]} color={i===0?"#111":"#d1d5db"}/>
-                  </div>
-                  <div style={{fontWeight:800,fontSize:14}}>{qtd} vendas</div>
-                </div>
-              ))}
-            </div>
-            <Alert type="success">💡 <strong>Sugestão IA:</strong> Priorize reposição de <strong>{topVendas[0]?.[0]}</strong>.</Alert>
-          </>
         )}
       </Section>
 
@@ -558,22 +529,6 @@ function PageDashboard({db,setDb,onNavigate}){
         )}
       </Section>
 
-      {/* Modal metas */}
-      {editMeta&&(
-        <Modal title="Editar Metas" onClose={()=>setEditMeta(false)}>
-          <div style={{marginBottom:12,padding:"10px 14px",background:"#f0fdf4",borderRadius:8,fontSize:12,color:"#15803d"}}>
-            💡 Coloque <strong>0</strong> para não exibir uma meta no dashboard.
-          </div>
-          <div style={{display:"flex",flexWrap:"wrap",gap:12}}>
-            <Field label="🛒 Meta de Pedidos"><Inp type="number" min="0" value={metaTemp.pedidos} onChange={e=>setMetaTemp(m=>({...m,pedidos:parseInt(e.target.value)||0}))}/></Field>
-            <Field label="💰 Meta de Receita (R$)"><Inp type="number" min="0" step="0.01" value={metaTemp.receita} onChange={e=>setMetaTemp(m=>({...m,receita:parseFloat(e.target.value)||0}))}/></Field>
-            <Field label="📈 Meta de Lucro (R$)"><Inp type="number" min="0" step="0.01" value={metaTemp.lucro} onChange={e=>setMetaTemp(m=>({...m,lucro:parseFloat(e.target.value)||0}))}/></Field>
-            <Field label="📱 Meta de Posts" half><Inp type="number" min="0" value={metaTemp.posts||0} onChange={e=>setMetaTemp(m=>({...m,posts:parseInt(e.target.value)||0}))}/></Field>
-            <Field label="⚽ Meta de Futebol" half><Inp type="number" min="0" value={metaTemp.futebol||0} onChange={e=>setMetaTemp(m=>({...m,futebol:parseInt(e.target.value)||0}))}/></Field>
-          </div>
-          <MBtns onClose={()=>setEditMeta(false)} onSave={()=>{setDb(prev=>({...prev,meta:metaTemp}));setEditMeta(false);}} label="Salvar Metas"/>
-        </Modal>
-      )}
     </div>
   );
 }
