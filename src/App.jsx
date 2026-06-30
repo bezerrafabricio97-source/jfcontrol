@@ -170,11 +170,12 @@ function KPI({label,value,sub,color,dark}){
       style={{background:dark?"#111":"#fff",border:dark?"none":"1px solid #e5e7eb",borderRadius:10,
         padding:"16px 18px",transition:"all 0.18s",transform:h?"translateY(-2px)":"none",
         boxShadow:h?"0 8px 24px rgba(0,0,0,0.12)":dark?"0 2px 8px rgba(0,0,0,0.3)":"0 1px 3px rgba(0,0,0,0.04)",
-        cursor:"default"}}>
+        cursor:"default",textAlign:"left"}}>
       <div style={{fontSize:11,color:dark?"rgba(255,255,255,0.45)":"#9ca3af",fontWeight:700,
-        textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:8}}>{label}</div>
-      <div style={{fontSize:20,fontWeight:700,color:dark?"#fff":(color||"#111"),letterSpacing:"-0.3px"}}>{value}</div>
-      {sub&&<div style={{fontSize:11,color:dark?"rgba(255,255,255,0.3)":"#9ca3af",marginTop:4}}>{sub}</div>}
+        textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:8,textAlign:"left"}}>{label}</div>
+      <div style={{fontSize:20,fontWeight:700,color:dark?"#fff":(color||"#111"),letterSpacing:"-0.3px",
+        textAlign:"left"}}>{value}</div>
+      {sub&&<div style={{fontSize:11,color:dark?"rgba(255,255,255,0.3)":"#9ca3af",marginTop:4,textAlign:"left"}}>{sub}</div>}
     </div>
   );
 }
@@ -373,6 +374,11 @@ function PageDashboard({db,setDb,onNavigate}){
   const now=new Date();
   const hora=now.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});
   const dataStr=now.toLocaleDateString("pt-BR",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
+  const nomeMesSel=(()=>{
+    const [ano,mes]=mesSel.split("-");
+    const nome=new Date(Number(ano),Number(mes)-1,1).toLocaleDateString("pt-BR",{month:"long",year:"numeric"});
+    return nome.charAt(0).toUpperCase()+nome.slice(1);
+  })();
   const metasAtivas=[
     {label:"Pedidos",atual:pm.length,meta:db.meta.pedidos,fmtFn:v=>String(v),color:"#2563eb"},
     {label:"Receita",atual:fat,meta:db.meta.receita,fmtFn:brl,color:"#16a34a"},
@@ -442,7 +448,7 @@ function PageDashboard({db,setDb,onNavigate}){
       </div>
 
       {/* Desempenho mensal */}
-      <Section title="📊 Desempenho Mensal" action={
+      <Section title={`📊 ${nomeMesSel}`} action={
         <select value={mesSel} onChange={e=>setMesSel(e.target.value)}
           style={{...INP,width:150,padding:"6px 10px"}}>
           {meses.map(m=><option key={m} value={m}>{m}</option>)}
@@ -1189,7 +1195,7 @@ function Sidebar({page,setPage,onLogout,open,onCloseMobile,escuro,setEscuro}){
   // A barra lateral é sempre escura — identidade fixa do app, não depende do
   // Modo Escuro (que afeta só o conteúdo da direita).
   return(
-    <div style={{width:230,minWidth:230,background:"#13111a",borderRight:"1px solid #24212e",
+    <div style={{width:200,minWidth:200,background:"#13111a",borderRight:"1px solid #24212e",
       display:"flex",flexDirection:"column",height:"100vh",flexShrink:0,overflowY:"auto"}}>
       <div style={{padding:"16px 16px 14px",borderBottom:"1px solid #24212e"}}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
