@@ -173,7 +173,7 @@ function KPI({label,value,sub,color,dark}){
         cursor:"default"}}>
       <div style={{fontSize:11,color:dark?"rgba(255,255,255,0.45)":"#9ca3af",fontWeight:700,
         textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:8}}>{label}</div>
-      <div style={{fontSize:26,fontWeight:800,color:dark?"#fff":(color||"#111"),letterSpacing:"-0.5px"}}>{value}</div>
+      <div style={{fontSize:20,fontWeight:700,color:dark?"#fff":(color||"#111"),letterSpacing:"-0.3px"}}>{value}</div>
       {sub&&<div style={{fontSize:11,color:dark?"rgba(255,255,255,0.3)":"#9ca3af",marginTop:4}}>{sub}</div>}
     </div>
   );
@@ -352,7 +352,7 @@ function FormProduto({inicial,onSave,onClose}){
 }
 
 // ── DASHBOARD ────────────────────────────────────────────────
-function PageDashboard({db,setDb}){
+function PageDashboard({db,setDb,onNavigate}){
   const [mesSel,setMesSel]=useState(mesAtual());
   const [editMeta,setEditMeta]=useState(false);
   const [metaTemp,setMetaTemp]=useState({...db.meta});
@@ -398,7 +398,7 @@ function PageDashboard({db,setDb}){
           </div>}
         </div>
         <div style={{textAlign:"right"}}>
-          <div style={{fontSize:48,fontWeight:900,color:"#fff",letterSpacing:"-3px",lineHeight:1}}>{hora}</div>
+          <div style={{fontSize:32,fontWeight:800,color:"#fff",letterSpacing:"-1.5px",lineHeight:1}}>{hora}</div>
           <div style={{fontSize:12,color:"rgba(255,255,255,0.3)",marginTop:4}}>
             {now.toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit",year:"numeric"})}
           </div>
@@ -414,29 +414,30 @@ function PageDashboard({db,setDb}){
         </Alert>
       )}
 
-      {/* 4 KPIs operacionais */}
+      {/* 4 KPIs operacionais — clicáveis, levam direto para Pedidos já filtrado */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14}}>
         {[
-          {label:"Pedidos a Fazer",icon:"📦",value:produzir,color:"#f97316",top:"#f97316"},
-          {label:"Em Transporte",  icon:"✈️", value:emTransp, color:"#2563eb",top:"#2563eb"},
-          {label:"Entregue",       icon:"✅", value:entregue, color:"#16a34a",top:"#16a34a"},
-          {label:"Atrasados",      icon:"🚨", value:atrasados,color:"#dc2626",top:"#dc2626"},
-        ].map(({label,icon,value,color,top})=>{
+          {label:"Pedidos a Fazer",icon:"📦",value:produzir,color:"#5c2030",top:"#5c2030",status:"A Fazer"},
+          {label:"Em Transporte",  icon:"✈️", value:emTransp, color:"#2563eb",top:"#2563eb",status:"Em Transporte"},
+          {label:"Entregue",       icon:"✅", value:entregue, color:"#16a34a",top:"#16a34a",status:"Entregue"},
+          {label:"Atrasados",      icon:"🚨", value:atrasados,color:"#dc2626",top:"#dc2626",status:"Cancelado"},
+        ].map(({label,icon,value,color,top,status})=>{
           const [h,setH]=useState(false);
           return(
             <div key={label} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)}
+              onClick={()=>onNavigate&&onNavigate("pedidos",status)}
               style={{background:"#fff",border:"1px solid #e5e7eb",borderTop:`4px solid ${top}`,
-                borderRadius:12,padding:"20px 22px",transition:"all 0.18s",
+                borderRadius:12,padding:"16px 18px",transition:"all 0.18s",cursor:"pointer",
                 transform:h?"translateY(-3px)":"none",
                 boxShadow:h?"0 10px 28px rgba(0,0,0,0.1)":"0 1px 4px rgba(0,0,0,0.05)"}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
                 <div>
                   <div style={{fontSize:11,fontWeight:700,color:"#9ca3af",textTransform:"uppercase",
-                    letterSpacing:"0.5px",marginBottom:10}}>{label}</div>
-                  <div style={{fontSize:40,fontWeight:900,color,lineHeight:1}}>{value}</div>
+                    letterSpacing:"0.5px",marginBottom:8}}>{label}</div>
+                  <div style={{fontSize:26,fontWeight:800,color,lineHeight:1}}>{value}</div>
                 </div>
-                <div style={{width:48,height:48,borderRadius:12,background:`${color}15`,
-                  display:"flex",alignItems:"center",justifyContent:"center",fontSize:24}}>{icon}</div>
+                <div style={{width:38,height:38,borderRadius:10,background:`${color}15`,
+                  display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>{icon}</div>
               </div>
             </div>
           );
@@ -591,8 +592,8 @@ function PageEstoque({db,onAdd,onEdit,onDelete}){
       {baixos.length>0&&<Alert type="error"><span style={{fontWeight:800}}>⚠ Estoque baixo:</span>{baixos.map(p=><span key={p.id} style={{background:"#fecaca",borderRadius:6,padding:"2px 8px",fontSize:12,fontWeight:700}}>{p.time} {p.uniforme} {p.tamanho} ({p.qtd}un)</span>)}</Alert>}
       {sugestoes.length>0&&<Alert type="success">💡 <strong>IA — Repor:</strong> {sugestoes.map(([k,v])=>`${k} (${v}vnd)`).join(" · ")}</Alert>}
       <div style={{display:"flex",gap:14,marginBottom:16}}>
-        <HCard style={{flex:1}}><div style={{fontSize:11,color:"#9ca3af",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:4}}>📦 TOTAL PEÇAS</div><div style={{fontSize:28,fontWeight:900,color:"#111"}}>{total}</div></HCard>
-        <HCard style={{flex:1}} color="#ca8a04"><div style={{fontSize:11,color:"#9ca3af",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:4}}>⚠ ESTOQUE BAIXO</div><div style={{fontSize:28,fontWeight:900,color:baixos.length>0?"#ca8a04":"#16a34a"}}>{baixos.length}</div></HCard>
+        <HCard style={{flex:1}}><div style={{fontSize:11,color:"#9ca3af",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:4}}>📦 TOTAL PEÇAS</div><div style={{fontSize:22,fontWeight:800,color:"#111"}}>{total}</div></HCard>
+        <HCard style={{flex:1}} color="#ca8a04"><div style={{fontSize:11,color:"#9ca3af",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:4}}>⚠ ESTOQUE BAIXO</div><div style={{fontSize:22,fontWeight:800,color:baixos.length>0?"#ca8a04":"#16a34a"}}>{baixos.length}</div></HCard>
         <HCard style={{flex:1}}><div style={{fontSize:11,color:"#9ca3af",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:4}}>💰 VALOR EM ESTOQUE</div><div style={{fontSize:22,fontWeight:900,color:"#111"}}>{brl(valor)}</div></HCard>
       </div>
       <Section>
@@ -634,19 +635,27 @@ function PageEstoque({db,onAdd,onEdit,onDelete}){
 }
 
 // ── PEDIDOS ──────────────────────────────────────────────────
-function PagePedidos({db,onAdd,onEdit,onDelete,onUpdateMeta}){
+function PagePedidos({db,onAdd,onEdit,onDelete,onUpdateMeta,statusInicial}){
   const [filtro,setFiltro]=useState("mes");const [busca,setBusca]=useState("");
+  const [statusFiltro,setStatusFiltro]=useState(statusInicial||"todos");
   const [mm,setMm]=useState(false);const [mt,setMt]=useState({...db.meta});
   const m=mesAtual();const hj=hoje();const sw=semIni();const mp=mesPrev();
+  // Quando chega um status específico vindo do Dashboard (ex: clique em "Pedidos a Fazer"),
+  // mostra todos os períodos para não escondiar pedidos por engano
+  useEffect(()=>{
+    if(statusInicial){setStatusFiltro(statusInicial);setFiltro("todos");}
+  },[statusInicial]);
   const filtrados=db.pedidos.filter(p=>{
     const mf=filtro==="todos"?true:filtro==="hoje"?p.data===hj:filtro==="semana"?p.data>=sw:filtro==="mes_ant"?p.data?.startsWith(mp):p.data?.startsWith(m);
-    return mf&&(!busca||p.cliente?.toLowerCase().includes(busca.toLowerCase())||p.time?.toLowerCase().includes(busca.toLowerCase()));
+    const sf=statusFiltro==="todos"?true:p.status===statusFiltro;
+    return mf&&sf&&(!busca||p.cliente?.toLowerCase().includes(busca.toLowerCase())||p.time?.toLowerCase().includes(busca.toLowerCase()));
   });
   const pm=db.pedidos.filter(p=>p.data?.startsWith(m));
   const fat=pm.reduce((a,p)=>a+(p.precoVenda||0)*(p.qtd||1),0);
   const cus=pm.reduce((a,p)=>a+((p.custoProduto||0)+(p.custoTaxa||0))*(p.qtd||1),0);
   const luc=r(fat-cus);const rec=pm.reduce((a,p)=>a+(p.valorRecebido||0),0);
   const FILTROS=[{k:"hoje",l:"Hoje"},{k:"semana",l:"Esta semana"},{k:"mes",l:"Este mês"},{k:"mes_ant",l:"Mês passado"},{k:"todos",l:"Todos"}];
+  const FILTROS_STATUS=[{k:"todos",l:"Todos os status"},...ST_PEDIDO.map(s=>({k:s,l:s}))];
   return(
     <div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16}}>
@@ -668,9 +677,20 @@ function PagePedidos({db,onAdd,onEdit,onDelete,onUpdateMeta}){
           })}
         </div>
       </Section>
+      {statusFiltro!=="todos"&&(
+        <Alert type="info">
+          Mostrando pedidos com status <strong>{statusFiltro}</strong>
+          <button onClick={()=>setStatusFiltro("todos")} style={{marginLeft:"auto",border:"none",
+            background:"none",cursor:"pointer",fontWeight:700,color:"#2563eb",fontSize:12}}>Limpar filtro</button>
+        </Alert>
+      )}
       <Section action={
         <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
           <Tabs options={FILTROS} value={filtro} onChange={setFiltro}/>
+          <select value={statusFiltro} onChange={e=>setStatusFiltro(e.target.value)}
+            style={{...INP,width:160,padding:"6px 10px",fontSize:12}}>
+            {FILTROS_STATUS.map(s=><option key={s.k} value={s.k}>{s.l}</option>)}
+          </select>
           <Inp value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Buscar..." style={{...INP,width:180}}/>
         </div>
       }>
@@ -854,9 +874,9 @@ function PageCaixa({db,setDb}){
       </div>
       <div style={{marginBottom:16}}><Tabs options={FILTROS} value={filtro} onChange={setFiltro}/></div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:14,marginBottom:16}}>
-        <HCard color="#16a34a"><div style={{fontSize:11,color:"#9ca3af",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:6}}>ENTRADAS</div><div style={{fontSize:28,fontWeight:900,color:"#16a34a"}}>{brl(ent)}</div><div style={{fontSize:11,color:"#9ca3af",marginTop:4}}>Saques + Extras</div></HCard>
-        <HCard color="#dc2626"><div style={{fontSize:11,color:"#9ca3af",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:6}}>SAÍDAS (DESPESAS)</div><div style={{fontSize:28,fontWeight:900,color:"#dc2626"}}>{brl(sai)}</div><div style={{fontSize:11,color:"#9ca3af",marginTop:4}}>Total de despesas</div></HCard>
-        <HCard color={saldo>=0?"#16a34a":"#dc2626"}><div style={{fontSize:11,color:"#9ca3af",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:6}}>SALDO EM CAIXA</div><div style={{fontSize:28,fontWeight:900,color:saldo>=0?"#16a34a":"#dc2626"}}>{brl(saldo)}</div><div style={{fontSize:11,color:"#9ca3af",marginTop:4}}>Entradas – Despesas</div></HCard>
+        <HCard color="#16a34a"><div style={{fontSize:11,color:"#9ca3af",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:6}}>ENTRADAS</div><div style={{fontSize:22,fontWeight:800,color:"#16a34a"}}>{brl(ent)}</div><div style={{fontSize:11,color:"#9ca3af",marginTop:4}}>Saques + Extras</div></HCard>
+        <HCard color="#dc2626"><div style={{fontSize:11,color:"#9ca3af",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:6}}>SAÍDAS (DESPESAS)</div><div style={{fontSize:22,fontWeight:800,color:"#dc2626"}}>{brl(sai)}</div><div style={{fontSize:11,color:"#9ca3af",marginTop:4}}>Total de despesas</div></HCard>
+        <HCard color={saldo>=0?"#16a34a":"#dc2626"}><div style={{fontSize:11,color:"#9ca3af",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:6}}>SALDO EM CAIXA</div><div style={{fontSize:22,fontWeight:800,color:saldo>=0?"#16a34a":"#dc2626"}}>{brl(saldo)}</div><div style={{fontSize:11,color:"#9ca3af",marginTop:4}}>Entradas – Despesas</div></HCard>
       </div>
       <Section title="Movimentações">
         {itens.length===0?<Empty msg="Nenhum lançamento neste período." icon="💳"/>:(
@@ -920,8 +940,8 @@ function PageTarefas({db,setDb}){
       <div style={{background:"#111",borderRadius:12,padding:"18px 22px",marginBottom:16}}>
         <div style={{fontWeight:800,fontSize:14,color:"#fff",marginBottom:12}}>📋 Relatório Semanal</div>
         <div style={{display:"flex",gap:24,alignItems:"center"}}>
-          <div style={{textAlign:"center"}}><div style={{fontSize:28,fontWeight:900,color:"#fff"}}>{fSem}</div><div style={{fontSize:11,color:"rgba(255,255,255,0.35)",marginTop:2}}>FEITAS</div></div>
-          <div style={{textAlign:"center"}}><div style={{fontSize:28,fontWeight:900,color:"#fbbf24"}}>{tSem-fSem}</div><div style={{fontSize:11,color:"rgba(255,255,255,0.35)",marginTop:2}}>PENDENTES</div></div>
+          <div style={{textAlign:"center"}}><div style={{fontSize:22,fontWeight:800,color:"#fff"}}>{fSem}</div><div style={{fontSize:11,color:"rgba(255,255,255,0.35)",marginTop:2}}>FEITAS</div></div>
+          <div style={{textAlign:"center"}}><div style={{fontSize:22,fontWeight:800,color:"#fbbf24"}}>{tSem-fSem}</div><div style={{fontSize:11,color:"rgba(255,255,255,0.35)",marginTop:2}}>PENDENTES</div></div>
           <div style={{flex:1}}><div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"rgba(255,255,255,0.35)",marginBottom:4}}><span>Progresso semanal</span><span>{prog}%</span></div><div style={{height:8,background:"rgba(255,255,255,0.1)",borderRadius:4}}><div style={{width:`${prog}%`,height:"100%",background:prog>=70?"#4ade80":"#fbbf24",borderRadius:4,transition:"width 0.5s"}}/></div></div>
         </div>
       </div>
@@ -1134,7 +1154,7 @@ const MENU_GESTAO=[
 
 function MenuItem({item,active,onClick,escuro}){
   const [h,setH]=useState(false);
-  const corAtivo = "#dc2626"; // vermelho T11, no espírito do destaque do Shopee Control
+  const corAtivo = "#5c2030"; // bordô discreto, cor de marca do menu (não confundir com vermelho de alerta)
   const bg = active ? corAtivo : (h ? (escuro?"rgba(255,255,255,0.06)":"#f3f4f6") : "transparent");
   const txt = active ? "#fff" : (escuro ? "#cbd5e1" : "#374151");
   return(
@@ -1161,7 +1181,7 @@ function Sidebar({page,setPage,onLogout,open,onCloseMobile,escuro,setEscuro}){
     <div style={{width:230,minWidth:230,background:bgSide,borderRight:borderSide,
       display:"flex",flexDirection:"column",height:"100vh",flexShrink:0,overflowY:"auto"}}>
       <div style={{display:"flex",alignItems:"center",gap:10,padding:"22px 20px 18px"}}>
-        <div style={{width:38,height:38,borderRadius:10,background:"#dc2626",display:"flex",
+        <div style={{width:38,height:38,borderRadius:10,background:"#5c2030",display:"flex",
           alignItems:"center",justifyContent:"center",fontSize:18}}>⚽</div>
         <div>
           <div style={{fontSize:15,fontWeight:900,color:escuro?"#fff":"#111",letterSpacing:"-0.3px"}}>T11 Sports</div>
@@ -1181,7 +1201,7 @@ function Sidebar({page,setPage,onLogout,open,onCloseMobile,escuro,setEscuro}){
             background:hDark?(escuro?"rgba(255,255,255,0.06)":"#f3f4f6"):"transparent",transition:"all 0.15s"}}>
           <Ico path={ICONS.moon} size={17} color={escuro?"#fbbf24":"#9ca3af"} strokeW={1.8}/>
           <span style={{fontSize:13,fontWeight:500,color:escuro?"#cbd5e1":"#374151",flex:1}}>Modo Escuro</span>
-          <div style={{width:34,height:18,borderRadius:10,background:escuro?"#dc2626":"#d1d5db",
+          <div style={{width:34,height:18,borderRadius:10,background:escuro?"#5c2030":"#d1d5db",
             position:"relative",transition:"all 0.2s"}}>
             <div style={{width:14,height:14,borderRadius:"50%",background:"#fff",position:"absolute",
               top:2,left:escuro?18:2,transition:"all 0.2s",boxShadow:"0 1px 3px rgba(0,0,0,0.3)"}}/>
@@ -1190,7 +1210,7 @@ function Sidebar({page,setPage,onLogout,open,onCloseMobile,escuro,setEscuro}){
       </div>
       <div style={{borderTop:escuro?"1px solid #24242e":"1px solid #f3f4f6",padding:"14px 16px",display:"flex",
         alignItems:"center",gap:10}}>
-        <div style={{width:34,height:34,borderRadius:"50%",background:"#dc2626",color:"#fff",
+        <div style={{width:34,height:34,borderRadius:"50%",background:"#5c2030",color:"#fff",
           display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:13,
           flexShrink:0}}>F</div>
         <div style={{flex:1,minWidth:0}}>
@@ -1220,7 +1240,7 @@ function Topbar({page,busca,setBusca,onRefresh,escuro}){
       padding:"16px 28px",borderBottom:escuro?"1px solid #24242e":"1px solid #e5e7eb",
       background:escuro?"#13131a":"#fff",position:"sticky",top:0,zIndex:50}}>
       <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
-        <div style={{width:4,height:20,background:"#dc2626",borderRadius:2}}/>
+        <div style={{width:4,height:20,background:"#5c2030",borderRadius:2}}/>
         <span style={{fontSize:17,fontWeight:800,color:escuro?"#fff":"#111",whiteSpace:"nowrap"}}>{PAGE_TITLES[page]||""}</span>
       </div>
       <div style={{display:"flex",alignItems:"center",gap:10,flex:1,justifyContent:"flex-end"}}>
@@ -1284,6 +1304,12 @@ export default function App(){
   const [logado,setLogado]=useState(()=>{try{return localStorage.getItem("t11_logado")==="1";}catch(_){return false;}});
   const [db,setDb]=useState(loadDB);
   const [page,setPage]=useState("dashboard");
+  const [statusFiltroPedidos,setStatusFiltroPedidos]=useState(null);
+
+  const navegarPara=(novaPagina,status)=>{
+    setStatusFiltroPedidos(status||null);
+    setPage(novaPagina);
+  };
   const [busca,setBusca]=useState("");
   const [modalPedido,setModalPedido]=useState(null);
   const [modalProduto,setModalProduto]=useState(null);
@@ -1340,9 +1366,9 @@ export default function App(){
 
   const renderPage=()=>{
     switch(page){
-      case "dashboard": return <PageDashboard db={db} setDb={setDb}/>;
+      case "dashboard": return <PageDashboard db={db} setDb={setDb} onNavigate={navegarPara}/>;
       case "estoque": return <PageEstoque db={db} onAdd={addProduto} onEdit={editProduto} onDelete={delProduto}/>;
-      case "pedidos": return <PagePedidos db={db} onAdd={addPedido} onEdit={editPedido} onDelete={delPedido} onUpdateMeta={updateMeta}/>;
+      case "pedidos": return <PagePedidos db={db} onAdd={addPedido} onEdit={editPedido} onDelete={delPedido} onUpdateMeta={updateMeta} statusInicial={statusFiltroPedidos}/>;
       case "gestao": return <PageGestao db={db} onEdit={editPedido} onAdd={addPedido}/>;
       case "custo": return <PageCusto db={db} setDb={setDb}/>;
       case "caixa": return <PageCaixa db={db} setDb={setDb}/>;
