@@ -1173,7 +1173,7 @@ function MenuItem({item,active,onClick,escuro}){
   const txt = active ? "#fff" : "#c4c1cc";
   return(
     <div onClick={onClick} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)}
-      style={{display:"flex",alignItems:"center",gap:11,padding:"8px 16px",cursor:"pointer",
+      style={{display:"flex",alignItems:"center",gap:11,padding:"7px 16px",cursor:"pointer",
         borderRadius:8,margin:"1px 10px",background:bg,transition:"all 0.15s"}}>
       <MenuIco k={item.ico} active={active}/>
       <span style={{fontSize:13,fontWeight:active?700:500,color:txt}}>{item.l}</span>
@@ -1183,7 +1183,7 @@ function MenuItem({item,active,onClick,escuro}){
 
 function MenuLabel({children}){
   return<div style={{fontSize:10,fontWeight:800,color:"#6b6877",textTransform:"uppercase",
-    letterSpacing:"0.8px",padding:"12px 20px 5px"}}>{children}</div>;
+    letterSpacing:"0.8px",padding:"9px 20px 4px"}}>{children}</div>;
 }
 
 function Sidebar({page,setPage,onLogout,open,onCloseMobile,escuro,setEscuro}){
@@ -1194,17 +1194,19 @@ function Sidebar({page,setPage,onLogout,open,onCloseMobile,escuro,setEscuro}){
   return(
     <div style={{width:230,minWidth:230,background:"#13111a",borderRight:"1px solid #24212e",
       display:"flex",flexDirection:"column",height:"100vh",flexShrink:0,overflowY:"auto"}}>
-      <div style={{padding:"20px 18px 16px",borderBottom:"1px solid #24212e"}}>
+      <div style={{padding:"16px 16px 14px",borderBottom:"1px solid #24212e"}}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
           <div style={{width:34,height:34,borderRadius:10,
             background:"linear-gradient(135deg,#5c2030,#3d1622)",display:"flex",
             alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}}>⚽</div>
-          <div style={{fontSize:14,fontWeight:700,color:"#fff",letterSpacing:"-0.2px"}}>T11 Sports</div>
+          <div style={{lineHeight:1.25}}>
+            <div style={{fontSize:14,fontWeight:700,color:"#fff",letterSpacing:"-0.2px"}}>T11 Sports</div>
+            <div style={{fontSize:9,fontWeight:700,color:"#7a7785",letterSpacing:"0.8px",
+              textTransform:"uppercase"}}>Gestão da Loja</div>
+          </div>
         </div>
-        <div style={{fontSize:9.5,fontWeight:700,color:"#7a7785",letterSpacing:"1px",
-          textTransform:"uppercase",marginTop:6,paddingLeft:44}}>Gestão da Loja</div>
       </div>
-      <div style={{flex:1,overflowY:"auto",padding:"6px 0"}}>
+      <div style={{flex:1,overflowY:"auto",padding:"4px 0"}}>
         <MenuLabel>Principal</MenuLabel>
         {MENU_PRINCIPAL.map(it=><MenuItem key={it.k} item={it} active={page===it.k} onClick={()=>ir(it.k)}/>)}
         <MenuLabel>Financeiro</MenuLabel>
@@ -1213,7 +1215,7 @@ function Sidebar({page,setPage,onLogout,open,onCloseMobile,escuro,setEscuro}){
         {MENU_GESTAO.map(it=><MenuItem key={it.k} item={it} active={page===it.k} onClick={()=>ir(it.k)}/>)}
         <div onClick={()=>setEscuro(e=>!e)} onMouseEnter={()=>setHDark(true)} onMouseLeave={()=>setHDark(false)}
           style={{display:"flex",alignItems:"center",gap:11,padding:"9px 16px",cursor:"pointer",
-            borderRadius:8,margin:"14px 10px 2px",
+            borderRadius:8,margin:"8px 10px 2px",
             background:hDark?"rgba(255,255,255,0.08)":"transparent",transition:"all 0.15s"}}>
           <span style={{fontSize:16,width:18,display:"inline-flex",justifyContent:"center"}}>🌙</span>
           <span style={{fontSize:13,fontWeight:500,color:"#c4c1cc",flex:1}}>Modo Escuro</span>
@@ -1224,7 +1226,7 @@ function Sidebar({page,setPage,onLogout,open,onCloseMobile,escuro,setEscuro}){
           </div>
         </div>
       </div>
-      <div style={{borderTop:"1px solid #24212e",padding:"14px 16px",display:"flex",
+      <div style={{borderTop:"1px solid #24212e",padding:"10px 14px",display:"flex",
         alignItems:"center",gap:10}}>
         <div style={{width:34,height:34,borderRadius:"50%",background:"#5c2030",color:"#fff",
           display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:13,
