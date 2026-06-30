@@ -1080,8 +1080,8 @@ const ICONS = {
   moon:<path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"/>,
 };
 
-function MenuIco({k,active,escuro}){
-  return <Ico path={ICONS[k]} size={17} color={active?"#fff":(escuro?"#6b7280":"#9ca3af")} strokeW={1.8}/>;
+function MenuIco({k,active}){
+  return <Ico path={ICONS[k]} size={17} color={active?"#fff":"#8a8794"} strokeW={1.8}/>;
 }
 
 // ── LOGIN ────────────────────────────────────────────────────
@@ -1154,72 +1154,74 @@ const MENU_GESTAO=[
 
 function MenuItem({item,active,onClick,escuro}){
   const [h,setH]=useState(false);
-  const corAtivo = "#5c2030"; // bordô discreto, cor de marca do menu (não confundir com vermelho de alerta)
-  const bg = active ? corAtivo : (h ? (escuro?"rgba(255,255,255,0.06)":"#f3f4f6") : "transparent");
-  const txt = active ? "#fff" : (escuro ? "#cbd5e1" : "#374151");
+  const corAtivo = "#5c2030"; // bordô discreto, cor de marca do menu
+  // A barra lateral é sempre escura (identidade fixa do app), então o texto/hover
+  // do menu seguem sempre o estilo "escuro", não o tema claro/escuro do conteúdo.
+  const bg = active ? corAtivo : (h ? "rgba(255,255,255,0.08)" : "transparent");
+  const txt = active ? "#fff" : "#c4c1cc";
   return(
     <div onClick={onClick} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)}
       style={{display:"flex",alignItems:"center",gap:11,padding:"10px 16px",cursor:"pointer",
         borderRadius:8,margin:"2px 10px",background:bg,transition:"all 0.15s"}}>
-      <MenuIco k={item.ico} active={active} escuro={escuro}/>
+      <MenuIco k={item.ico} active={active}/>
       <span style={{fontSize:13,fontWeight:active?700:500,color:txt}}>{item.l}</span>
     </div>
   );
 }
 
-function MenuLabel({children,escuro}){
-  return<div style={{fontSize:10,fontWeight:800,color:escuro?"#6b7280":"#9ca3af",textTransform:"uppercase",
+function MenuLabel({children}){
+  return<div style={{fontSize:10,fontWeight:800,color:"#6b6877",textTransform:"uppercase",
     letterSpacing:"0.8px",padding:"18px 20px 6px"}}>{children}</div>;
 }
 
 function Sidebar({page,setPage,onLogout,open,onCloseMobile,escuro,setEscuro}){
   const ir=k=>{setPage(k);onCloseMobile&&onCloseMobile();};
   const [hDark,setHDark]=useState(false);
-  const bgSide = escuro ? "#13131a" : "#fff";
-  const borderSide = escuro ? "1px solid #24242e" : "1px solid #e5e7eb";
+  // A barra lateral é sempre escura — identidade fixa do app, não depende do
+  // Modo Escuro (que afeta só o conteúdo da direita).
   return(
-    <div style={{width:230,minWidth:230,background:bgSide,borderRight:borderSide,
+    <div style={{width:230,minWidth:230,background:"#13111a",borderRight:"1px solid #24212e",
       display:"flex",flexDirection:"column",height:"100vh",flexShrink:0,overflowY:"auto"}}>
       <div style={{display:"flex",alignItems:"center",gap:10,padding:"22px 20px 18px"}}>
         <div style={{width:38,height:38,borderRadius:10,background:"#5c2030",display:"flex",
           alignItems:"center",justifyContent:"center",fontSize:18}}>⚽</div>
         <div>
-          <div style={{fontSize:15,fontWeight:900,color:escuro?"#fff":"#111",letterSpacing:"-0.3px"}}>T11 Sports</div>
-          <div style={{fontSize:9.5,fontWeight:700,color:"#9ca3af",letterSpacing:"0.5px"}}>GESTÃO DA LOJA</div>
+          <div style={{fontSize:15,fontWeight:900,color:"#fff",letterSpacing:"-0.3px"}}>T11 Sports</div>
+          <div style={{fontSize:9.5,fontWeight:700,color:"#8a8794",letterSpacing:"0.5px"}}>GESTÃO DA LOJA</div>
         </div>
       </div>
       <div style={{flex:1,overflowY:"auto",paddingBottom:10}}>
-        <MenuLabel escuro={escuro}>Principal</MenuLabel>
-        {MENU_PRINCIPAL.map(it=><MenuItem key={it.k} item={it} active={page===it.k} onClick={()=>ir(it.k)} escuro={escuro}/>)}
-        <MenuLabel escuro={escuro}>Financeiro</MenuLabel>
-        {MENU_FINANCEIRO.map(it=><MenuItem key={it.k} item={it} active={page===it.k} onClick={()=>ir(it.k)} escuro={escuro}/>)}
-        <MenuLabel escuro={escuro}>Gestão</MenuLabel>
-        {MENU_GESTAO.map(it=><MenuItem key={it.k} item={it} active={page===it.k} onClick={()=>ir(it.k)} escuro={escuro}/>)}
+        <MenuLabel>Principal</MenuLabel>
+        {MENU_PRINCIPAL.map(it=><MenuItem key={it.k} item={it} active={page===it.k} onClick={()=>ir(it.k)}/>)}
+        <MenuLabel>Financeiro</MenuLabel>
+        {MENU_FINANCEIRO.map(it=><MenuItem key={it.k} item={it} active={page===it.k} onClick={()=>ir(it.k)}/>)}
+        <MenuLabel>Gestão</MenuLabel>
+        {MENU_GESTAO.map(it=><MenuItem key={it.k} item={it} active={page===it.k} onClick={()=>ir(it.k)}/>)}
         <div onClick={()=>setEscuro(e=>!e)} onMouseEnter={()=>setHDark(true)} onMouseLeave={()=>setHDark(false)}
           style={{display:"flex",alignItems:"center",gap:11,padding:"10px 16px",cursor:"pointer",
             borderRadius:8,margin:"18px 10px 2px",
-            background:hDark?(escuro?"rgba(255,255,255,0.06)":"#f3f4f6"):"transparent",transition:"all 0.15s"}}>
-          <Ico path={ICONS.moon} size={17} color={escuro?"#fbbf24":"#9ca3af"} strokeW={1.8}/>
-          <span style={{fontSize:13,fontWeight:500,color:escuro?"#cbd5e1":"#374151",flex:1}}>Modo Escuro</span>
-          <div style={{width:34,height:18,borderRadius:10,background:escuro?"#5c2030":"#d1d5db",
+            background:hDark?"rgba(255,255,255,0.08)":"transparent",transition:"all 0.15s"}}>
+          <Ico path={ICONS.moon} size={17} color={escuro?"#fbbf24":"#8a8794"} strokeW={1.8}/>
+          <span style={{fontSize:13,fontWeight:500,color:"#c4c1cc",flex:1}}>Modo Escuro</span>
+          <div style={{width:34,height:18,borderRadius:10,background:escuro?"#5c2030":"#3a3744",
             position:"relative",transition:"all 0.2s"}}>
             <div style={{width:14,height:14,borderRadius:"50%",background:"#fff",position:"absolute",
               top:2,left:escuro?18:2,transition:"all 0.2s",boxShadow:"0 1px 3px rgba(0,0,0,0.3)"}}/>
           </div>
         </div>
       </div>
-      <div style={{borderTop:escuro?"1px solid #24242e":"1px solid #f3f4f6",padding:"14px 16px",display:"flex",
+      <div style={{borderTop:"1px solid #24212e",padding:"14px 16px",display:"flex",
         alignItems:"center",gap:10}}>
         <div style={{width:34,height:34,borderRadius:"50%",background:"#5c2030",color:"#fff",
           display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:13,
           flexShrink:0}}>F</div>
         <div style={{flex:1,minWidth:0}}>
-          <div style={{fontSize:13,fontWeight:700,color:escuro?"#fff":"#111"}}>Fabrício</div>
-          <div style={{fontSize:11,color:"#9ca3af"}}>Administrador</div>
+          <div style={{fontSize:13,fontWeight:700,color:"#fff"}}>Fabrício</div>
+          <div style={{fontSize:11,color:"#8a8794"}}>Administrador</div>
         </div>
         <button onClick={onLogout} title="Sair"
           style={{border:"none",background:"none",cursor:"pointer",padding:6,borderRadius:6,
-            display:"flex",color:"#9ca3af"}}>
+            display:"flex",color:"#8a8794"}}>
           <Ico path={ICONS.logout} size={17}/>
         </button>
       </div>
