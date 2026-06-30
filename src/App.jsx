@@ -939,7 +939,371 @@ function PageFornecedor({db,setDb}){
         {ST_FORN.map(st=><KPI key={st} label={st} value={grupos[st].length} color={st==="Chegou - Vendido"?"#16a34a":"#111"}/>)}
       </div>
       <div style={{display:"flex",justifyContent:"flex-end",marginBottom:16}}><Btn onClick={abrirN}>+ Novo Pedido</Btn></div>
+      {db.pedidosFornecedor.length===0&&(
+        <Section>
+          <Empty msg="Nenhum pedido de fornecedor cadastrado." icon="🚚"/>
+        </Section>
+      )}
       {ST_FORN.map(st=>grupos[st].length===0?null:(
         <Section key={st} title={<span style={{display:"flex",alignItems:"center",gap:10}}><Badge status={st}/><span style={{fontSize:13,color:"#9ca3af"}}>{grupos[st].length} item{grupos[st].length>1?"s":""}</span></span>}>
           <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}>
-            <thead><tr>{["Data","Cliente","Camisa","Tam.","Qtd",
+            <thead><tr>{["Data","Cliente","Camisa","Tam.","Qtd","Preço Venda","Custo","Status",""].map(h=><th key={h} style={TH}>{h}</th>)}</tr></thead>
+            <tbody>{grupos[st].map(p=>{
+              const ct=r(((p.custoProduto||0)+(p.custoTaxa||0))*(p.qtd||1));
+              return(
+                <HRow key={p.id}>
+                  <td style={{...TD,color:"#9ca3af"}}>{p.data}</td>
+                  <td style={{...TD,fontWeight:700,color:"#111"}}>{p.cliente||"—"}</td>
+                  <td style={TD}>{p.time} {p.uniforme&&<span style={{color:"#9ca3af"}}>({p.uniforme})</span>}</td>
+                  <td style={TD}>{p.tamanho}</td>
+                  <td style={{...TD,textAlign:"center"}}>{p.qtd}</td>
+                  <td style={{...TD,fontWeight:700}}>{brl(p.precoVenda)}</td>
+                  <td style={TD}>{brl(ct)}</td>
+                  <td style={TD}>
+                    <select value={p.status} onChange={e=>mover(p.id,e.target.value)}
+                      style={{...INP,width:160,padding:"5px 8px",fontSize:12}}>
+                      {ST_FORN.map(s2=><option key={s2}>{s2}</option>)}
+                    </select>
+                  </td>
+                  <td style={TD}><div style={{display:"flex",gap:5}}>
+                    <Btn v="sm" onClick={()=>abrirE(p)}>✏</Btn>
+                    <Btn v="danger" onClick={()=>del(p.id)}>🗑</Btn>
+                  </div></td>
+                </HRow>
+              );
+            })}</tbody>
+          </table></div>
+        </Section>
+      ))}
+      {(modal==="novo"||modal==="editar")&&(
+        <Modal title={modal==="editar"?"Editar Pedido Fornecedor":"Novo Pedido Fornecedor"} onClose={()=>setModal(null)}>
+          <div style={{display:"flex",flexWrap:"wrap",gap:12}}>
+            <Field label="Data" half><Inp type="date" value={f.data} onChange={e=>s("data",e.target.value)}/></Field>
+            <Field label="Status" half><Sel value={f.status} onChange={e=>s("status",e.target.value)}>{ST_FORN.map(st=><option key={st}>{st}</option>)}</Sel></Field>
+            <Field label="Cliente (opcional)"><Inp value={f.cliente} onChange={e=>s("cliente",e.target.value)} placeholder="Se já tem cliente reservado"/></Field>
+            <Field label="Time / Camisa" half>
+              <Inp list="lst-tf" value={f.time} onChange={e=>s("time",e.target.value)} placeholder="ex: Bahia" autoFocus/>
+              <datalist id="lst-tf">{times.map(t=><option key={t} value={t}/>)}</datalist>
+            </Field>
+            <Field label="Uniforme" half><Sel value={f.uniforme} onChange={e=>s("uniforme",e.target.value)}>{UNIFORMES.map(u=><option key={u}>{u}</option>)}</Sel></Field>
+            <Field label="Tamanho" third><Sel value={f.tamanho} onChange={e=>s("tamanho",e.target.value)}>{TAMANHOS.map(t=><option key={t}>{t}</option>)}</Sel></Field>
+            <Field label="Quantidade" third><Inp type="number" min="1" value={f.qtd} onChange={e=>n("qtd",e.target.value)}/></Field>
+            <Field label="Preço de Venda unit." third><Inp type="number" min="0" step="0.01" value={f.precoVenda} onChange={e=>n("precoVenda",e.target.value)}/></Field>
+            <Field label="Custo Produto unit." half><Inp type="number" min="0" step="0.01" value={f.custoProduto} onChange={e=>n("custoProduto",e.target.value)}/></Field>
+            <Field label="Custo Taxa unit." half><Inp type="number" min="0" step="0.01" value={f.custoTaxa} onChange={e=>n("custoTaxa",e.target.value)}/></Field>
+            <Field label="Observação"><Inp value={f.obs} onChange={e=>s("obs",e.target.value)} placeholder="ex: encomenda especial..."/></Field>
+          </div>
+          <MBtns onClose={()=>setModal(null)} onSave={salv}/>
+        </Modal>
+      )}
+    </div>
+  );
+}
+// ── ÍCONES (SVG inline, sem dependências) ──────────────────────
+function Ico({path,size=18,color="currentColor",strokeW=2}){
+  return(
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+      strokeWidth={strokeW} strokeLinecap="round" strokeLinejoin="round">
+      {path}
+    </svg>
+  );
+}
+const ICONS = {
+  dashboard:<><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></>,
+  estoque:<><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></>,
+  pedidos:<><circle cx="9" cy="21" r="1.5"/><circle cx="19" cy="21" r="1.5"/><path d="M2 3h2l2.4 12.4a2 2 0 002 1.6h9.2a2 2 0 002-1.6L22 7H6"/></>,
+  gestao:<><rect x="3" y="3" width="6" height="6" rx="1.2"/><rect x="15" y="3" width="6" height="6" rx="1.2"/><rect x="3" y="15" width="6" height="6" rx="1.2"/><rect x="15" y="15" width="6" height="6" rx="1.2"/></>,
+  custo:<><path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></>,
+  caixa:<><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v16"/></>,
+  tarefas:<><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 11l2 2 4-4"/></>,
+  fornecedor:<><path d="M3 9l9-6 9 6"/><path d="M4 10v9h16v-9"/><path d="M9 19v-5h6v5"/></>,
+  search:<><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></>,
+  refresh:<><path d="M21 12a9 9 0 10-2.6 6.3"/><path d="M21 5v7h-7"/></>,
+  bell:<><path d="M6 8a6 6 0 1112 0c0 4 1.5 5.5 1.5 6.5H4.5C4.5 13.5 6 12 6 8z"/><path d="M9.5 18a2.5 2.5 0 005 0"/></>,
+  logout:<><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></>,
+  user:<><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></>,
+};
+
+function MenuIco({k,active}){
+  return <Ico path={ICONS[k]} size={17} color={active?"#fff":"#9ca3af"} strokeW={1.8}/>;
+}
+
+// ── LOGIN ────────────────────────────────────────────────────
+function Login({onLogin}){
+  const [usuario,setUsuario]=useState("");
+  const [senha,setSenha]=useState("");
+  const [erro,setErro]=useState("");
+  const [carregando,setCarregando]=useState(false);
+  const entrar=()=>{
+    setErro("");
+    if(!usuario.trim()||!senha.trim()){setErro("Informe usuário e senha.");return;}
+    setCarregando(true);
+    setTimeout(()=>{
+      if(usuario.trim().toLowerCase()===AUTH.usuario&&senha===AUTH.senha){
+        onLogin();
+      }else{
+        setErro("Usuário ou senha incorretos.");
+        setCarregando(false);
+      }
+    },350);
+  };
+  const onKey=e=>{if(e.key==="Enter")entrar();};
+  return(
+    <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#0f0f0f 0%,#1a1a2e 100%)",
+      display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+      <div style={{background:"#fff",borderRadius:16,padding:"40px 36px",width:380,maxWidth:"95vw",
+        boxShadow:"0 25px 60px rgba(0,0,0,0.35)"}}>
+        <div style={{display:"flex",flexDirection:"column",alignItems:"center",marginBottom:28}}>
+          <div style={{width:56,height:56,borderRadius:14,background:"#111",display:"flex",
+            alignItems:"center",justifyContent:"center",fontSize:28,marginBottom:14}}>⚽</div>
+          <div style={{fontSize:20,fontWeight:900,color:"#111",letterSpacing:"-0.5px"}}>T11 Sports</div>
+          <div style={{fontSize:12,color:"#9ca3af",fontWeight:700,letterSpacing:"0.5px",marginTop:2}}>GESTÃO DA LOJA</div>
+        </div>
+        {erro&&<Alert type="error">{erro}</Alert>}
+        <div style={{marginBottom:14}}>
+          <label style={LBL}>Usuário</label>
+          <Inp value={usuario} onChange={e=>setUsuario(e.target.value)} onKeyDown={onKey}
+            placeholder="Seu usuário" autoFocus/>
+        </div>
+        <div style={{marginBottom:22}}>
+          <label style={LBL}>Senha</label>
+          <Inp type="password" value={senha} onChange={e=>setSenha(e.target.value)} onKeyDown={onKey}
+            placeholder="Sua senha"/>
+        </div>
+        <Btn onClick={entrar} disabled={carregando} style={{width:"100%",justifyContent:"center"}}>
+          {carregando?"Entrando...":"Entrar"}
+        </Btn>
+        <div style={{textAlign:"center",fontSize:11,color:"#d1d5db",marginTop:20}}>
+          Dados salvos automaticamente neste dispositivo
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── LAYOUT (Sidebar + Topbar) ──────────────────────────────────
+const MENU_PRINCIPAL=[
+  {k:"dashboard",l:"Dashboard",ico:"dashboard"},
+  {k:"estoque",l:"Estoque",ico:"estoque"},
+  {k:"pedidos",l:"Pedidos",ico:"pedidos"},
+  {k:"gestao",l:"Gestão",ico:"gestao"},
+];
+const MENU_FINANCEIRO=[
+  {k:"custo",l:"Custo / Lucro",ico:"custo"},
+  {k:"caixa",l:"Caixa",ico:"caixa"},
+];
+const MENU_GESTAO=[
+  {k:"tarefas",l:"Tarefas",ico:"tarefas"},
+  {k:"fornecedor",l:"Fornecedores",ico:"fornecedor"},
+];
+
+function MenuItem({item,active,onClick}){
+  const [h,setH]=useState(false);
+  return(
+    <div onClick={onClick} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)}
+      style={{display:"flex",alignItems:"center",gap:11,padding:"10px 16px",cursor:"pointer",
+        borderRadius:8,margin:"2px 10px",background:active?"#111":h?"#f3f4f6":"transparent",
+        transition:"all 0.15s"}}>
+      <MenuIco k={item.ico} active={active}/>
+      <span style={{fontSize:13,fontWeight:active?700:500,color:active?"#fff":"#374151"}}>{item.l}</span>
+    </div>
+  );
+}
+
+function MenuLabel({children}){
+  return<div style={{fontSize:10,fontWeight:800,color:"#9ca3af",textTransform:"uppercase",
+    letterSpacing:"0.8px",padding:"18px 20px 6px"}}>{children}</div>;
+}
+
+function Sidebar({page,setPage,onLogout,open,onCloseMobile}){
+  const ir=k=>{setPage(k);onCloseMobile&&onCloseMobile();};
+  return(
+    <div style={{width:230,minWidth:230,background:"#fff",borderRight:"1px solid #e5e7eb",
+      display:"flex",flexDirection:"column",height:"100vh",position:"sticky",top:0,
+      transform:open?"translateX(0)":undefined}}>
+      <div style={{display:"flex",alignItems:"center",gap:10,padding:"22px 20px 18px"}}>
+        <div style={{width:38,height:38,borderRadius:10,background:"#111",display:"flex",
+          alignItems:"center",justifyContent:"center",fontSize:18}}>⚽</div>
+        <div>
+          <div style={{fontSize:15,fontWeight:900,color:"#111",letterSpacing:"-0.3px"}}>T11 Sports</div>
+          <div style={{fontSize:9.5,fontWeight:700,color:"#9ca3af",letterSpacing:"0.5px"}}>GESTÃO DA LOJA</div>
+        </div>
+      </div>
+      <div style={{flex:1,overflowY:"auto",paddingBottom:10}}>
+        <MenuLabel>Principal</MenuLabel>
+        {MENU_PRINCIPAL.map(it=><MenuItem key={it.k} item={it} active={page===it.k} onClick={()=>ir(it.k)}/>)}
+        <MenuLabel>Financeiro</MenuLabel>
+        {MENU_FINANCEIRO.map(it=><MenuItem key={it.k} item={it} active={page===it.k} onClick={()=>ir(it.k)}/>)}
+        <MenuLabel>Gestão</MenuLabel>
+        {MENU_GESTAO.map(it=><MenuItem key={it.k} item={it} active={page===it.k} onClick={()=>ir(it.k)}/>)}
+      </div>
+      <div style={{borderTop:"1px solid #f3f4f6",padding:"14px 16px",display:"flex",
+        alignItems:"center",gap:10}}>
+        <div style={{width:34,height:34,borderRadius:"50%",background:"#111",color:"#fff",
+          display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:13,
+          flexShrink:0}}>F</div>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#111"}}>Fabrício</div>
+          <div style={{fontSize:11,color:"#9ca3af"}}>Administrador</div>
+        </div>
+        <button onClick={onLogout} title="Sair"
+          style={{border:"none",background:"none",cursor:"pointer",padding:6,borderRadius:6,
+            display:"flex",color:"#9ca3af"}}>
+          <Ico path={ICONS.logout} size={17}/>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+const PAGE_TITLES={
+  dashboard:"Dashboard", estoque:"Estoque", pedidos:"Pedidos", gestao:"Gestão",
+  custo:"Custo / Lucro", caixa:"Caixa", tarefas:"Tarefas", fornecedor:"Fornecedores",
+};
+
+function Topbar({page,busca,setBusca,onRefresh}){
+  const [girando,setGirando]=useState(false);
+  const refresh=()=>{setGirando(true);onRefresh&&onRefresh();setTimeout(()=>setGirando(false),500);};
+  return(
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:16,
+      padding:"16px 28px",borderBottom:"1px solid #e5e7eb",background:"#fff",
+      position:"sticky",top:0,zIndex:50}}>
+      <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
+        <div style={{width:4,height:20,background:"#111",borderRadius:2}}/>
+        <span style={{fontSize:17,fontWeight:800,color:"#111",whiteSpace:"nowrap"}}>{PAGE_TITLES[page]||""}</span>
+      </div>
+      <div style={{display:"flex",alignItems:"center",gap:10,flex:1,justifyContent:"flex-end"}}>
+        <div style={{position:"relative",width:240,maxWidth:"40vw"}}>
+          <div style={{position:"absolute",left:11,top:0,bottom:0,display:"flex",alignItems:"center",color:"#9ca3af"}}>
+            <Ico path={ICONS.search} size={15}/>
+          </div>
+          <input value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Buscar pedidos, produtos..."
+            style={{...INP,paddingLeft:34,fontSize:12.5}}/>
+        </div>
+        <button onClick={refresh} title="Atualizar"
+          style={{display:"flex",alignItems:"center",gap:6,padding:"8px 12px",borderRadius:8,
+            border:"1px solid #d1d5db",background:"#fff",cursor:"pointer",fontSize:12,fontWeight:700,
+            color:"#374151",whiteSpace:"nowrap"}}>
+          <span style={{display:"flex",transition:"transform 0.5s",transform:girando?"rotate(360deg)":"none"}}>
+            <Ico path={ICONS.refresh} size={15}/>
+          </span>
+          Atualizar
+        </button>
+        <div style={{display:"flex",alignItems:"center",gap:7,padding:"6px 10px 6px 8px",
+          borderRadius:20,background:"#f9fafb",border:"1px solid #e5e7eb"}}>
+          <span style={{width:8,height:8,borderRadius:"50%",background:"#16a34a"}}/>
+          <span style={{fontSize:12,fontWeight:700,color:"#374151"}}>Fabrício</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── BUSCA GLOBAL (filtra produtos/pedidos pelo termo do topo) ──
+function useBuscaGlobal(db,busca){
+  return useMemo(()=>{
+    if(!busca||!busca.trim())return null;
+    const t=busca.toLowerCase();
+    const produtos=db.produtos.filter(p=>(p.time||p.nome||"").toLowerCase().includes(t)||(p.cor||"").toLowerCase().includes(t));
+    const pedidos=db.pedidos.filter(p=>(p.cliente||"").toLowerCase().includes(t)||(p.time||p.camisa||"").toLowerCase().includes(t));
+    return{produtos,pedidos};
+  },[db,busca]);
+}
+
+function BuscaResultados({resultado,onClose}){
+  if(!resultado)return null;
+  const total=resultado.produtos.length+resultado.pedidos.length;
+  return(
+    <div style={{margin:"0 28px 16px"}}>
+      <Alert type="info">
+        🔎 <strong>{total}</strong> resultado{total!==1?"s":""} encontrado{total!==1?"s":""}
+        {total>0&&<span> — {resultado.produtos.length} produto(s), {resultado.pedidos.length} pedido(s)</span>}
+        <button onClick={onClose} style={{marginLeft:"auto",border:"none",background:"none",
+          cursor:"pointer",fontWeight:700,color:"#2563eb",fontSize:12}}>Limpar busca</button>
+      </Alert>
+    </div>
+  );
+}
+
+// ── APP PRINCIPAL ────────────────────────────────────────────
+export default function App(){
+  const [logado,setLogado]=useState(()=>{try{return localStorage.getItem("t11_logado")==="1";}catch(_){return false;}});
+  const [db,setDb]=useState(loadDB);
+  const [page,setPage]=useState("dashboard");
+  const [busca,setBusca]=useState("");
+  const [modalPedido,setModalPedido]=useState(null);
+  const [modalProduto,setModalProduto]=useState(null);
+
+  useEffect(()=>{saveDB(db);},[db]);
+
+  const resultadoBusca=useBuscaGlobal(db,busca);
+
+  const login=()=>{try{localStorage.setItem("t11_logado","1");}catch(_){}setLogado(true);};
+  const logout=()=>{if(!window.confirm("Deseja sair?"))return;try{localStorage.removeItem("t11_logado");}catch(_){}setLogado(false);};
+
+  if(!logado)return <Login onLogin={login}/>;
+
+  const addPedido=()=>setModalPedido({modo:"novo"});
+  const editPedido=p=>setModalPedido({modo:"editar",item:p});
+  const delPedido=id=>{if(!window.confirm("Excluir pedido?"))return;setDb(prev=>({...prev,pedidos:prev.pedidos.filter(p=>p.id!==id)}));};
+  const salvarPedido=f=>{
+    setDb(prev=>{
+      if(modalPedido?.modo==="editar")return{...prev,pedidos:prev.pedidos.map(p=>p.id===f.id?f:p)};
+      const id=prev.nextId+1;return{...prev,nextId:id,pedidos:[...prev.pedidos,{...f,id}]};
+    });
+    setModalPedido(null);
+  };
+  const updateMeta=m=>setDb(prev=>({...prev,meta:m}));
+
+  const addProduto=()=>setModalProduto({modo:"novo"});
+  const editProduto=p=>setModalProduto({modo:"editar",item:p});
+  const delProduto=id=>{if(!window.confirm("Excluir produto?"))return;setDb(prev=>({...prev,produtos:prev.produtos.filter(p=>p.id!==id)}));};
+  const salvarProduto=f=>{
+    setDb(prev=>{
+      if(modalProduto?.modo==="editar")return{...prev,produtos:prev.produtos.map(p=>p.id===f.id?f:p)};
+      const id=prev.nextId+1;return{...prev,nextId:id,produtos:[...prev.produtos,{...f,id}]};
+    });
+    setModalProduto(null);
+  };
+
+  const renderPage=()=>{
+    switch(page){
+      case "dashboard": return <PageDashboard db={db} setDb={setDb}/>;
+      case "estoque": return <PageEstoque db={db} onAdd={addProduto} onEdit={editProduto} onDelete={delProduto}/>;
+      case "pedidos": return <PagePedidos db={db} onAdd={addPedido} onEdit={editPedido} onDelete={delPedido} onUpdateMeta={updateMeta}/>;
+      case "gestao": return <PageGestao db={db} onEdit={editPedido} onAdd={addPedido}/>;
+      case "custo": return <PageCusto db={db} setDb={setDb}/>;
+      case "caixa": return <PageCaixa db={db} setDb={setDb}/>;
+      case "tarefas": return <PageTarefas db={db} setDb={setDb}/>;
+      case "fornecedor": return <PageFornecedor db={db} setDb={setDb}/>;
+      default: return null;
+    }
+  };
+
+  return(
+    <div style={{display:"flex",minHeight:"100vh",background:"#f6f7f9",
+      fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"}}>
+      <Sidebar page={page} setPage={setPage} onLogout={logout}/>
+      <div style={{flex:1,minWidth:0,display:"flex",flexDirection:"column"}}>
+        <Topbar page={page} busca={busca} setBusca={setBusca} onRefresh={()=>setDb(loadDB())}/>
+        <BuscaResultados resultado={resultadoBusca} onClose={()=>setBusca("")}/>
+        <div style={{padding:"20px 28px 40px",flex:1}}>
+          {renderPage()}
+        </div>
+      </div>
+
+      {modalPedido&&(
+        <Modal title={modalPedido.modo==="editar"?"Editar Pedido":"Novo Pedido"} onClose={()=>setModalPedido(null)} wide>
+          <FormPedido inicial={modalPedido.item} produtos={db.produtos}
+            onSave={salvarPedido} onClose={()=>setModalPedido(null)}/>
+        </Modal>
+      )}
+      {modalProduto&&(
+        <Modal title={modalProduto.modo==="editar"?"Editar Produto":"Novo Produto"} onClose={()=>setModalProduto(null)} wide>
+          <FormProduto inicial={modalProduto.item}
+            onSave={salvarProduto} onClose={()=>setModalProduto(null)}/>
+        </Modal>
+      )}
+    </div>
+  );
+}
