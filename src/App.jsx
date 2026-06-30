@@ -1080,8 +1080,20 @@ const ICONS = {
   moon:<path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"/>,
 };
 
-function MenuIco({k,active}){
-  return <Ico path={ICONS[k]} size={17} color={active?"#fff":"#8a8794"} strokeW={1.8}/>;
+const MENU_EMOJI = {
+  dashboard:"📊",
+  estoque:"📦",
+  pedidos:"🛒",
+  gestao:"📋",
+  custo:"💰",
+  caixa:"🏦",
+  tarefas:"✅",
+  fornecedor:"🚚",
+};
+
+function MenuIco({k}){
+  return <span style={{fontSize:16,lineHeight:1,width:18,display:"inline-flex",
+    justifyContent:"center"}}>{MENU_EMOJI[k]||"•"}</span>;
 }
 
 // ── LOGIN ────────────────────────────────────────────────────
@@ -1161,8 +1173,8 @@ function MenuItem({item,active,onClick,escuro}){
   const txt = active ? "#fff" : "#c4c1cc";
   return(
     <div onClick={onClick} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)}
-      style={{display:"flex",alignItems:"center",gap:11,padding:"10px 16px",cursor:"pointer",
-        borderRadius:8,margin:"2px 10px",background:bg,transition:"all 0.15s"}}>
+      style={{display:"flex",alignItems:"center",gap:11,padding:"8px 16px",cursor:"pointer",
+        borderRadius:8,margin:"1px 10px",background:bg,transition:"all 0.15s"}}>
       <MenuIco k={item.ico} active={active}/>
       <span style={{fontSize:13,fontWeight:active?700:500,color:txt}}>{item.l}</span>
     </div>
@@ -1171,7 +1183,7 @@ function MenuItem({item,active,onClick,escuro}){
 
 function MenuLabel({children}){
   return<div style={{fontSize:10,fontWeight:800,color:"#6b6877",textTransform:"uppercase",
-    letterSpacing:"0.8px",padding:"18px 20px 6px"}}>{children}</div>;
+    letterSpacing:"0.8px",padding:"12px 20px 5px"}}>{children}</div>;
 }
 
 function Sidebar({page,setPage,onLogout,open,onCloseMobile,escuro,setEscuro}){
@@ -1182,15 +1194,17 @@ function Sidebar({page,setPage,onLogout,open,onCloseMobile,escuro,setEscuro}){
   return(
     <div style={{width:230,minWidth:230,background:"#13111a",borderRight:"1px solid #24212e",
       display:"flex",flexDirection:"column",height:"100vh",flexShrink:0,overflowY:"auto"}}>
-      <div style={{display:"flex",alignItems:"center",gap:10,padding:"22px 20px 18px"}}>
-        <div style={{width:38,height:38,borderRadius:10,background:"#5c2030",display:"flex",
-          alignItems:"center",justifyContent:"center",fontSize:18}}>⚽</div>
-        <div>
-          <div style={{fontSize:15,fontWeight:900,color:"#fff",letterSpacing:"-0.3px"}}>T11 Sports</div>
-          <div style={{fontSize:9.5,fontWeight:700,color:"#8a8794",letterSpacing:"0.5px"}}>GESTÃO DA LOJA</div>
+      <div style={{padding:"20px 18px 16px",borderBottom:"1px solid #24212e"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <div style={{width:34,height:34,borderRadius:10,
+            background:"linear-gradient(135deg,#5c2030,#3d1622)",display:"flex",
+            alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}}>⚽</div>
+          <div style={{fontSize:14,fontWeight:700,color:"#fff",letterSpacing:"-0.2px"}}>T11 Sports</div>
         </div>
+        <div style={{fontSize:9.5,fontWeight:700,color:"#7a7785",letterSpacing:"1px",
+          textTransform:"uppercase",marginTop:6,paddingLeft:44}}>Gestão da Loja</div>
       </div>
-      <div style={{flex:1,overflowY:"auto",paddingBottom:10}}>
+      <div style={{flex:1,overflowY:"auto",padding:"6px 0"}}>
         <MenuLabel>Principal</MenuLabel>
         {MENU_PRINCIPAL.map(it=><MenuItem key={it.k} item={it} active={page===it.k} onClick={()=>ir(it.k)}/>)}
         <MenuLabel>Financeiro</MenuLabel>
@@ -1198,10 +1212,10 @@ function Sidebar({page,setPage,onLogout,open,onCloseMobile,escuro,setEscuro}){
         <MenuLabel>Gestão</MenuLabel>
         {MENU_GESTAO.map(it=><MenuItem key={it.k} item={it} active={page===it.k} onClick={()=>ir(it.k)}/>)}
         <div onClick={()=>setEscuro(e=>!e)} onMouseEnter={()=>setHDark(true)} onMouseLeave={()=>setHDark(false)}
-          style={{display:"flex",alignItems:"center",gap:11,padding:"10px 16px",cursor:"pointer",
-            borderRadius:8,margin:"18px 10px 2px",
+          style={{display:"flex",alignItems:"center",gap:11,padding:"9px 16px",cursor:"pointer",
+            borderRadius:8,margin:"14px 10px 2px",
             background:hDark?"rgba(255,255,255,0.08)":"transparent",transition:"all 0.15s"}}>
-          <Ico path={ICONS.moon} size={17} color={escuro?"#fbbf24":"#8a8794"} strokeW={1.8}/>
+          <span style={{fontSize:16,width:18,display:"inline-flex",justifyContent:"center"}}>🌙</span>
           <span style={{fontSize:13,fontWeight:500,color:"#c4c1cc",flex:1}}>Modo Escuro</span>
           <div style={{width:34,height:18,borderRadius:10,background:escuro?"#5c2030":"#3a3744",
             position:"relative",transition:"all 0.2s"}}>
