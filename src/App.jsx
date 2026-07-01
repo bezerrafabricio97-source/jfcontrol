@@ -9,6 +9,7 @@ const TAMANHOS = ["P","M","G","GG","XGG"];
 const TIMES = ["Bahia","Vitória","Flamengo","Corinthians","São Paulo","Palmeiras","Vasco","Outro"];
 const UNIFORMES = ["Uniforme 1","Uniforme 2","Goleiro","Treino"];
 const ST_PEDIDO = ["A Fazer","Pedido Feito","Em Transporte","Entregue","Cancelado"];
+const ST_PEDIDO_FORM = ["A Fazer","Em Transporte","Entregue","Cancelado"];
 const ST_FORN = ["Lista de Espera","Pedido Feito","Chegou - Estoque","Chegou - Vendido"];
 const CATS_DESP = ["Produto / Estoque","Taxa / Importação","Ferramenta / Software","Frete","Outros"];
 const CATS_REC = ["Venda","Aporte de Sócio","Outros"];
@@ -24,6 +25,7 @@ const ST_STYLE = {
   "Em Transporte":   {bg:"#faf5ff",fg:"#7c3aed",bd:"#e9d5ff"},
   "Entregue":        {bg:"#f0fdf4",fg:"#16a34a",bd:"#bbf7d0"},
   "Cancelado":       {bg:"#fef2f2",fg:"#dc2626",bd:"#fecaca"},
+    "Atrasado":        {bg:"#fef2f2",fg:"#7f1d1d",bd:"#dc2626"},
   "Lista de Espera": {bg:"#f9fafb",fg:"#6b7280",bd:"#e5e7eb"},
   "Chegou - Estoque":{bg:"#f0fdf4",fg:"#16a34a",bd:"#bbf7d0"},
   "Chegou - Vendido":{bg:"#eff6ff",fg:"#2563eb",bd:"#bfdbfe"},
@@ -31,6 +33,13 @@ const ST_STYLE = {
 
 const r=(n)=>Number((n||0).toFixed(2));
 const brl=(n)=>(n||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
+// Verifica se pedido está atrasado: status "A Fazer" com data mais de 7 dias atrás
+function isAtrasado(p){
+  if(p.status!=="A Fazer")return false;
+  if(!p.data)return false;
+  const diff=(new Date()-new Date(p.data))/(1000*60*60*24);
+  return diff>7;
+}
 const fmtData=(d)=>{
   if(!d)return"—";
   const [ano,mes,dia]=d.split("-");
@@ -289,7 +298,7 @@ function Alert({type,children}){
 
 // ── FORMULÁRIOS ──────────────────────────────────────────────
 function FormPedido({inicial,produtos,onSave,onClose}){
-  const vz={data:hoje(),cliente:"",time:"",uniforme:"Uniforme 1",tamanho:"M",qtd:1,
+  const vz={data:hoje(),cliente:"",time:"",ano:new Date().getFullYear(),uniforme:"Uniforme 1",tamanho:"M",qtd:1,
     precoVenda:0,valorRecebido:0,custoProduto:0,custoTaxa:0,status:"A Fazer",obs:""};
   const [f,setF]=useState(inicial?{...vz,...inicial}:vz);
   const s=(k,v)=>setF(p=>({...p,[k]:v}));const n=(k,v)=>s(k,parseFloat(v)||0);
@@ -302,19 +311,20 @@ function FormPedido({inicial,produtos,onSave,onClose}){
   return(<>
     <div style={{display:"flex",flexWrap:"wrap",gap:12}}>
       <Field label="Data" half><Inp type="date" value={f.data} onChange={e=>s("data",e.target.value)}/></Field>
-      <Field label="Status" half><Sel value={f.status} onChange={e=>s("status",e.target.value)}>{ST_PEDIDO.map(st=><option key={st}>{st}</option>)}</Sel></Field>
+      <Field label="Status" half><Sel value={f.status} onChange={e=>s("status",e.target.value)}>{ST_PEDIDO_FORM.map(st=><option key={st}>{st}</option>)}</Sel></Field>
       <Field label="Nome do Cliente"><Inp value={f.cliente} onChange={e=>s("cliente",e.target.value)} placeholder="Nome completo" autoFocus/></Field>
-      <Field label="Time / Camisa" half>
+      <Field label="Time / Camisa" third>
         <Inp list="lst-tp" value={f.time} onChange={e=>fill(e.target.value)} placeholder="ex: Bahia"/>
         <datalist id="lst-tp">{times.map(t=><option key={t} value={t}/>)}</datalist>
       </Field>
-      <Field label="Uniforme" half><Sel value={f.uniforme} onChange={e=>s("uniforme",e.target.value)}>{UNIFORMES.map(u=><option key={u}>{u}</option>)}</Sel></Field>
+      <Field label="Ano" third><Inp type="number" min="2000" max="2099" value={f.ano||new Date().getFullYear()} onChange={e=>s("ano",parseInt(e.target.value)||new Date().getFullYear())}/></Field>
+      <Field label="Uniforme" third><Sel value={f.uniforme} onChange={e=>s("uniforme",e.target.value)}>{UNIFORMES.map(u=><option key={u}>{u}</option>)}</Sel></Field>
       <Field label="Tamanho" third><Sel value={f.tamanho} onChange={e=>s("tamanho",e.target.value)}>{TAMANHOS.map(t=><option key={t}>{t}</option>)}</Sel></Field>
       <Field label="Quantidade" third><Inp type="number" min="1" value={f.qtd} onChange={e=>n("qtd",e.target.value)}/></Field>
-      <Field label="Preço de Venda unit." third><Inp type="number" min="0" step="0.01" value={f.precoVenda} onChange={e=>n("precoVenda",e.target.value)}/></Field>
+      <Field label="Preço de Venda" third><Inp type="number" min="0" step="0.01" value={f.precoVenda} onChange={e=>n("precoVenda",e.target.value)}/></Field>
       <Field label="Valor já Recebido (R$)"><Inp type="number" min="0" step="0.01" value={f.valorRecebido} onChange={e=>n("valorRecebido",e.target.value)} placeholder="0 = não recebeu ainda"/></Field>
-      <Field label="Custo Produto unit." half><Inp type="number" min="0" step="0.01" value={f.custoProduto} onChange={e=>n("custoProduto",e.target.value)}/></Field>
-      <Field label="Custo Taxa unit." half><Inp type="number" min="0" step="0.01" value={f.custoTaxa} onChange={e=>n("custoTaxa",e.target.value)}/></Field>
+      <Field label="Custo Produto" half><Inp type="number" min="0" step="0.01" value={f.custoProduto} onChange={e=>n("custoProduto",e.target.value)}/></Field>
+      <Field label="Custo Taxa" half><Inp type="number" min="0" step="0.01" value={f.custoTaxa} onChange={e=>n("custoTaxa",e.target.value)}/></Field>
       <Field label="Observação"><Inp value={f.obs} onChange={e=>s("obs",e.target.value)} placeholder="ex: parcelado, entrega especial..."/></Field>
     </div>
     <InfoBox items={[
@@ -372,7 +382,7 @@ function PageDashboard({db,setDb,onNavigate}){
   const produzir=db.pedidos.filter(p=>p.status==="A Fazer").length;
   const emTransp=db.pedidos.filter(p=>p.status==="Em Transporte").length;
   const entregue=db.pedidos.filter(p=>p.status==="Entregue").length;
-  const atrasados=db.pedidos.filter(p=>p.status==="Cancelado").length;
+  const atrasados=db.pedidos.filter(isAtrasado).length;
   const tarefasHj=db.tarefas.filter(t=>!t.feita&&t.data===hoje()).length;
   const vendas={};db.pedidos.forEach(p=>{const k=`${p.time||p.camisa} ${p.tamanho}`;vendas[k]=(vendas[k]||0)+(p.qtd||1);});
   const topVendas=Object.entries(vendas).sort((a,b)=>b[1]-a[1]).slice(0,5);
@@ -431,7 +441,7 @@ function PageDashboard({db,setDb,onNavigate}){
           {label:"Pedidos a Fazer",icon:"📦",value:produzir,color:"#a16207",status:"A Fazer"},
           {label:"Em Transporte",  icon:"🚚", value:emTransp, color:"#2563eb",status:"Em Transporte"},
           {label:"Entregue",       icon:"✅", value:entregue, color:"#16a34a",status:"Entregue"},
-          {label:"Atrasados",      icon:"🔴", value:atrasados,color:"#dc2626",status:"Cancelado"},
+          {label:"Atrasados",      icon:"🔴", value:atrasados,color:"#dc2626",status:"__atrasados__"},
         ].map(({label,icon,value,color,status})=>{
           const [h,setH]=useState(false);
           return(
@@ -525,7 +535,7 @@ function PageDashboard({db,setDb,onNavigate}){
                     <HRow key={p.id}>
                       <td style={{...TD,color:"#9ca3af"}}>{fmtData(p.data)}</td>
                       <td style={{...TD,fontWeight:700,color:"#111"}}>{p.cliente}</td>
-                      <td style={TD}>{p.time||p.camisa} {p.uniforme&&`(${p.uniforme})`}</td>
+                      <td style={TD}>{p.time||p.camisa}{p.ano&&` ${p.ano}`} {p.uniforme&&`(${p.uniforme})`}</td>
                       <td style={TD}>{p.tamanho}</td>
                       <td style={{...TD,color:"#dc2626"}}>{brl(custo)}</td>
                       <td style={{...TD,color:"#dc2626"}}>{brl(taxa)}</td>
@@ -593,7 +603,14 @@ function PageEstoque({db,onAdd,onEdit,onDelete}){
                       <td style={TD}>{brl(ct)}</td>
                       <td style={{...TD,color:"#6b7280"}}>{p.fornecedor||"—"}</td>
                       <td style={TD}><StockBadge qtd={p.qtd} qtdMin={p.qtdMin}/></td>
-                      <td style={TD}><div style={{display:"flex",gap:5}}><Btn v="sm" onClick={()=>onEdit(p)}>✏</Btn><Btn v="danger" onClick={()=>onDelete(p.id)}>🗑</Btn></div></td>
+                      <td style={TD}><div style={{display:"flex",gap:5}}>
+                        <button onClick={()=>onEdit(p)} title="Editar" style={{width:32,height:32,borderRadius:7,border:"1px solid #e5e7eb",background:"#f9fafb",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:"#374151",transition:"all 0.15s"}}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>
+                        </button>
+                        <button onClick={()=>onDelete(p.id)} title="Excluir" style={{width:32,height:32,borderRadius:7,border:"1px solid #fecaca",background:"#fef2f2",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:"#dc2626",transition:"all 0.15s"}}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+                        </button>
+                      </div></td>
                     </HRow>
                   );
                 })}
@@ -610,24 +627,54 @@ function PageEstoque({db,onAdd,onEdit,onDelete}){
 function PagePedidos({db,onAdd,onEdit,onDelete,onUpdateMeta,statusInicial}){
   const [filtro,setFiltro]=useState("mes");const [busca,setBusca]=useState("");
   const [statusFiltro,setStatusFiltro]=useState(statusInicial||"todos");
+  const [mesFiltro,setMesFiltro]=useState(""); // "" = usa o filtro de período acima
   const [mm,setMm]=useState(false);const [mt,setMt]=useState({...db.meta});
   const m=mesAtual();const hj=hoje();const sw=semIni();const mp=mesPrev();
-  // Quando chega um status específico vindo do Dashboard (ex: clique em "Pedidos a Fazer"),
-  // mostra todos os períodos para não escondiar pedidos por engano
+
+  // Gera lista de meses com pedidos (últimos 12 meses + meses que têm pedido)
+  const mesesDisponiveis=useMemo(()=>{
+    const set=new Set();
+    // Últimos 12 meses
+    for(let i=0;i<12;i++){
+      const d=new Date();d.setDate(1);d.setMonth(d.getMonth()-i);
+      set.add(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`);
+    }
+    // Meses de pedidos existentes
+    db.pedidos.forEach(p=>{if(p.data)set.add(p.data.slice(0,7));});
+    return [...set].sort().reverse();
+  },[db.pedidos]);
+
+  // Quando chega um status específico vindo do Dashboard
   useEffect(()=>{
-    if(statusInicial){setStatusFiltro(statusInicial);setFiltro("todos");}
+    if(statusInicial){
+      setStatusFiltro(statusInicial==="__atrasados__"?"__atrasados__":statusInicial);
+      setFiltro("todos");
+      setMesFiltro("");
+    }
   },[statusInicial]);
+
   const filtrados=db.pedidos.filter(p=>{
-    const mf=filtro==="todos"?true:filtro==="hoje"?p.data===hj:filtro==="semana"?p.data>=sw:filtro==="mes_ant"?p.data?.startsWith(mp):p.data?.startsWith(m);
-    const sf=statusFiltro==="todos"?true:p.status===statusFiltro;
-    return mf&&sf&&(!busca||p.cliente?.toLowerCase().includes(busca.toLowerCase())||p.time?.toLowerCase().includes(busca.toLowerCase()));
+    // Filtro de período: mês específico tem prioridade
+    let mf;
+    if(mesFiltro){
+      mf=p.data?.startsWith(mesFiltro);
+    }else{
+      mf=filtro==="todos"?true:filtro==="hoje"?p.data===hj:filtro==="semana"?p.data>=sw:filtro==="mes_ant"?p.data?.startsWith(mp):p.data?.startsWith(m);
+    }
+    // Filtro de status (suporta __atrasados__)
+    const sf=statusFiltro==="todos"?true:statusFiltro==="__atrasados__"?isAtrasado(p):p.status===statusFiltro;
+    return mf&&sf&&(!busca||p.cliente?.toLowerCase().includes(busca.toLowerCase())||p.time?.toLowerCase().includes(busca.toLowerCase())||p.camisa?.toLowerCase().includes(busca.toLowerCase()));
   });
   const pm=db.pedidos.filter(p=>p.data?.startsWith(m));
   const fat=pm.reduce((a,p)=>a+(p.precoVenda||0)*(p.qtd||1),0);
   const cus=pm.reduce((a,p)=>a+((p.custoProduto||0)+(p.custoTaxa||0))*(p.qtd||1),0);
   const luc=r(fat-cus);const rec=pm.reduce((a,p)=>a+(p.valorRecebido||0),0);
   const FILTROS=[{k:"hoje",l:"Hoje"},{k:"semana",l:"Esta semana"},{k:"mes",l:"Este mês"},{k:"mes_ant",l:"Mês passado"},{k:"todos",l:"Todos"}];
-  const FILTROS_STATUS=[{k:"todos",l:"Todos os status"},...ST_PEDIDO.map(s=>({k:s,l:s}))];
+  const FILTROS_STATUS=[
+    {k:"todos",l:"Todos os status"},
+    {k:"__atrasados__",l:"⚠ Atrasados (+7 dias)"},
+    ...ST_PEDIDO.map(s=>({k:s,l:s}))
+  ];
   return(
     <div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16}}>
@@ -649,21 +696,39 @@ function PagePedidos({db,onAdd,onEdit,onDelete,onUpdateMeta,statusInicial}){
           })}
         </div>
       </Section>
-      {statusFiltro!=="todos"&&(
+      {(statusFiltro!=="todos")&&(
         <Alert type="info">
-          Mostrando pedidos com status <strong>{statusFiltro}</strong>
+          {statusFiltro==="__atrasados__"
+            ?"⚠ Mostrando pedidos atrasados (A Fazer há mais de 7 dias)"
+            :<>Mostrando pedidos com status <strong>{statusFiltro}</strong></>}
           <button onClick={()=>setStatusFiltro("todos")} style={{marginLeft:"auto",border:"none",
             background:"none",cursor:"pointer",fontWeight:700,color:"#2563eb",fontSize:12}}>Limpar filtro</button>
         </Alert>
       )}
+      {mesFiltro&&(
+        <Alert type="info">
+          📅 Filtrando por {(()=>{const[ano,mesN]=mesFiltro.split("-");const n=new Date(Number(ano),Number(mesN)-1,1).toLocaleDateString("pt-BR",{month:"long",year:"numeric"});return n.charAt(0).toUpperCase()+n.slice(1);})()}
+          <button onClick={()=>setMesFiltro("")} style={{marginLeft:"auto",border:"none",
+            background:"none",cursor:"pointer",fontWeight:700,color:"#2563eb",fontSize:12}}>Limpar</button>
+        </Alert>
+      )}
       <Section action={
         <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-          <Tabs options={FILTROS} value={filtro} onChange={setFiltro}/>
+          {!mesFiltro&&<Tabs options={FILTROS} value={filtro} onChange={setFiltro}/>}
+          <select value={mesFiltro} onChange={e=>{setMesFiltro(e.target.value);if(e.target.value)setFiltro("todos");}}
+            style={{...INP,width:150,padding:"6px 10px",fontSize:12}}>
+            <option value="">Por mês ▾</option>
+            {mesesDisponiveis.map(mes=>{
+              const [ano,mesN]=mes.split("-");
+              const nome=new Date(Number(ano),Number(mesN)-1,1).toLocaleDateString("pt-BR",{month:"long",year:"numeric"});
+              return<option key={mes} value={mes}>{nome.charAt(0).toUpperCase()+nome.slice(1)}</option>;
+            })}
+          </select>
           <select value={statusFiltro} onChange={e=>setStatusFiltro(e.target.value)}
-            style={{...INP,width:160,padding:"6px 10px",fontSize:12}}>
+            style={{...INP,width:190,padding:"6px 10px",fontSize:12}}>
             {FILTROS_STATUS.map(s=><option key={s.k} value={s.k}>{s.l}</option>)}
           </select>
-          <Inp value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Buscar..." style={{...INP,width:180}}/>
+          <Inp value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Buscar..." style={{...INP,width:160}}/>
         </div>
       }>
         <div style={{fontWeight:800,fontSize:15,color:"#111",marginBottom:14}}>Pedidos</div>
@@ -679,13 +744,20 @@ function PagePedidos({db,onAdd,onEdit,onDelete,onUpdateMeta,statusInicial}){
                     <HRow key={p.id}>
                       <td style={{...TD,color:"#9ca3af"}}>{fmtData(p.data)}</td>
                       <td style={{...TD,color:"#6b7280",fontSize:12}}>#{p.id}</td>
-                      <td style={TD}><div style={{fontWeight:700,color:"#111"}}>{p.time||p.camisa} {p.tamanho}</div><div style={{fontSize:11,color:"#9ca3af"}}>{p.cliente}{sb>0&&<span style={{color:"#dc2626"}}> · Receber {brl(sb)}</span>}</div></td>
+                      <td style={TD}><div style={{fontWeight:700,color:"#111"}}>{p.time||p.camisa}{p.ano&&` ${p.ano}`} {p.tamanho}</div><div style={{fontSize:11,color:"#9ca3af"}}>{p.cliente}{sb>0&&<span style={{color:"#dc2626"}}> · Receber {brl(sb)}</span>}</div></td>
                       <td style={{...TD,textAlign:"center"}}>{p.qtd||1}</td>
                       <td style={{...TD,fontWeight:700}}>{brl(v)}</td>
                       <td style={TD}>{brl(c)} <MargBadge marg={mg}/></td>
                       <td style={{...TD,fontWeight:700,color:l>=0?"#16a34a":"#dc2626"}}>{brl(l)}</td>
-                      <td style={TD}><Badge status={p.status}/></td>
-                      <td style={TD}><div style={{display:"flex",gap:5}}><Btn v="sm" onClick={()=>onEdit(p)}>✏</Btn><Btn v="danger" onClick={()=>onDelete(p.id)}>🗑</Btn></div></td>
+                      <td style={TD}><Badge status={isAtrasado(p)?"Atrasado":p.status}/></td>
+                      <td style={TD}><div style={{display:"flex",gap:5}}>
+                        <button onClick={()=>onEdit(p)} title="Editar" style={{width:32,height:32,borderRadius:7,border:"1px solid #e5e7eb",background:"#f9fafb",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:"#374151",transition:"all 0.15s"}}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>
+                        </button>
+                        <button onClick={()=>onDelete(p.id)} title="Excluir" style={{width:32,height:32,borderRadius:7,border:"1px solid #fecaca",background:"#fef2f2",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:"#dc2626",transition:"all 0.15s"}}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+                        </button>
+                      </div></td>
                     </HRow>
                   );
                 })}
@@ -1015,9 +1087,9 @@ function PageFornecedor({db,setDb}){
             <Field label="Uniforme" half><Sel value={f.uniforme} onChange={e=>s("uniforme",e.target.value)}>{UNIFORMES.map(u=><option key={u}>{u}</option>)}</Sel></Field>
             <Field label="Tamanho" third><Sel value={f.tamanho} onChange={e=>s("tamanho",e.target.value)}>{TAMANHOS.map(t=><option key={t}>{t}</option>)}</Sel></Field>
             <Field label="Quantidade" third><Inp type="number" min="1" value={f.qtd} onChange={e=>n("qtd",e.target.value)}/></Field>
-            <Field label="Preço de Venda unit." third><Inp type="number" min="0" step="0.01" value={f.precoVenda} onChange={e=>n("precoVenda",e.target.value)}/></Field>
-            <Field label="Custo Produto unit." half><Inp type="number" min="0" step="0.01" value={f.custoProduto} onChange={e=>n("custoProduto",e.target.value)}/></Field>
-            <Field label="Custo Taxa unit." half><Inp type="number" min="0" step="0.01" value={f.custoTaxa} onChange={e=>n("custoTaxa",e.target.value)}/></Field>
+            <Field label="Preço de Venda" third><Inp type="number" min="0" step="0.01" value={f.precoVenda} onChange={e=>n("precoVenda",e.target.value)}/></Field>
+            <Field label="Custo Produto" half><Inp type="number" min="0" step="0.01" value={f.custoProduto} onChange={e=>n("custoProduto",e.target.value)}/></Field>
+            <Field label="Custo Taxa" half><Inp type="number" min="0" step="0.01" value={f.custoTaxa} onChange={e=>n("custoTaxa",e.target.value)}/></Field>
             <Field label="Observação"><Inp value={f.obs} onChange={e=>s("obs",e.target.value)} placeholder="ex: encomenda especial..."/></Field>
           </div>
           <MBtns onClose={()=>setModal(null)} onSave={salv}/>
