@@ -298,7 +298,7 @@ function Alert({type,children}){
 
 // ── FORMULÁRIOS ──────────────────────────────────────────────
 function FormPedido({inicial,produtos,onSave,onClose}){
-  const vz={data:hoje(),cliente:"",time:"",ano:new Date().getFullYear(),uniforme:"Uniforme 1",tamanho:"M",qtd:1,
+  const vz={data:hoje(),cliente:"",telefone:"",captacao:"",time:"",ano:new Date().getFullYear(),uniforme:"Uniforme 1",tamanho:"M",qtd:1,
     precoVenda:0,valorRecebido:0,custoProduto:0,custoTaxa:0,status:"A Fazer",obs:""};
   const [f,setF]=useState(inicial?{...vz,...inicial}:vz);
   const s=(k,v)=>setF(p=>({...p,[k]:v}));const n=(k,v)=>s(k,parseFloat(v)||0);
@@ -312,9 +312,11 @@ function FormPedido({inicial,produtos,onSave,onClose}){
     <div style={{display:"flex",flexWrap:"wrap",gap:12}}>
       <Field label="Data" half><Inp type="date" value={f.data} onChange={e=>s("data",e.target.value)}/></Field>
       <Field label="Status" half><Sel value={f.status} onChange={e=>s("status",e.target.value)}>{ST_PEDIDO_FORM.map(st=><option key={st}>{st}</option>)}</Sel></Field>
-      <Field label="Nome do Cliente"><Inp value={f.cliente} onChange={e=>s("cliente",e.target.value)} placeholder="Nome completo" autoFocus/></Field>
-      <Field label="Time / Camisa" third>
-        <Inp list="lst-tp" value={f.time} onChange={e=>fill(e.target.value)} placeholder="ex: Bahia"/>
+      <Field label="Nome do Cliente" half><Inp value={f.cliente} onChange={e=>s("cliente",e.target.value)} placeholder="Nome completo" autoFocus/></Field>
+      <Field label="Telefone" half><Inp value={f.telefone||""} onChange={e=>s("telefone",e.target.value)} placeholder="(xx) xxxxx-xxxx"/></Field>
+      <Field label="Local de Captação"><Inp value={f.captacao||""} onChange={e=>s("captacao",e.target.value)} placeholder="ex: Instagram, WhatsApp, Loja física, Indicação..."/></Field>
+      <Field label="Time / Camisa" half>
+        <Inp list="lst-tp" value={f.time} onChange={e=>fill(e.target.value)} placeholder="ex: Vitória Rubro Negra"/>
         <datalist id="lst-tp">{times.map(t=><option key={t} value={t}/>)}</datalist>
       </Field>
       <Field label="Ano" third><Inp type="number" min="2000" max="2099" value={f.ano||new Date().getFullYear()} onChange={e=>s("ano",parseInt(e.target.value)||new Date().getFullYear())}/></Field>
@@ -665,10 +667,13 @@ function PagePedidos({db,onAdd,onEdit,onDelete,onUpdateMeta,statusInicial}){
     const sf=statusFiltro==="todos"?true:statusFiltro==="__atrasados__"?isAtrasado(p):p.status===statusFiltro;
     return mf&&sf&&(!busca||p.cliente?.toLowerCase().includes(busca.toLowerCase())||p.time?.toLowerCase().includes(busca.toLowerCase())||p.camisa?.toLowerCase().includes(busca.toLowerCase()));
   });
-  const pm=db.pedidos.filter(p=>p.data?.startsWith(m));
+  // KPIs acompanham o filtro de mês selecionado (mesFiltro) ou mês atual (m)
+  const mesKPI = mesFiltro || m;
+  const pm=db.pedidos.filter(p=>p.data?.startsWith(mesKPI));
   const fat=pm.reduce((a,p)=>a+(p.precoVenda||0)*(p.qtd||1),0);
   const cus=pm.reduce((a,p)=>a+((p.custoProduto||0)+(p.custoTaxa||0))*(p.qtd||1),0);
   const luc=r(fat-cus);const rec=pm.reduce((a,p)=>a+(p.valorRecebido||0),0);
+  const nomeMesKPI=(()=>{const [ano,mesN]=mesKPI.split("-");const n=new Date(Number(ano),Number(mesN)-1,1).toLocaleDateString("pt-BR",{month:"long",year:"numeric"});return n.charAt(0).toUpperCase()+n.slice(1);})();
   const FILTROS=[{k:"hoje",l:"Hoje"},{k:"semana",l:"Esta semana"},{k:"mes",l:"Este mês"},{k:"mes_ant",l:"Mês passado"},{k:"todos",l:"Todos"}];
   const FILTROS_STATUS=[
     {k:"todos",l:"Todos os status"},
@@ -678,21 +683,21 @@ function PagePedidos({db,onAdd,onEdit,onDelete,onUpdateMeta,statusInicial}){
   return(
     <div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16}}>
-        <div><div style={{fontSize:22,fontWeight:800,color:"#111"}}>Pedidos</div><div style={{fontSize:13,color:"#9ca3af"}}>Meta mensal vs realizado</div></div>
+        <div><div style={{fontSize:22,fontWeight:800,color:"#111"}}>Pedidos</div><div style={{fontSize:13,color:"#9ca3af"}}>{nomeMesKPI}</div></div>
         <div style={{display:"flex",gap:8}}><Btn v="sec" onClick={()=>{setMt({...db.meta});setMm(true);}}>🎯 Meta</Btn><Btn onClick={onAdd}>+ Pedido</Btn></div>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:12,marginBottom:16}}>
-        <KPI label="Pedidos Mês" value={pm.length} dark/>
+        <KPI label={`Pedidos ${nomeMesKPI.split(" ")[0]}`} value={pm.length} dark/>
         <KPI label="Faturamento" value={brl(fat)} color="#16a34a"/>
-        <KPI label="Custo Mês" value={brl(cus)} color="#dc2626"/>
+        <KPI label="Custo" value={brl(cus)} color="#dc2626"/>
         <KPI label="Lucro Líquido" value={brl(luc)} color={luc>=0?"#16a34a":"#dc2626"}/>
         <KPI label="A Receber" value={brl(r(fat-rec))} color={fat-rec>0?"#ca8a04":"#16a34a"}/>
       </div>
-      <Section title={`🎯 Meta de ${m}`}>
+      <Section title={`🎯 Meta de ${nomeMesKPI}`}>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:20}}>
-          {[{l:"Pedidos",a:pm.length,m:db.meta.pedidos,f:v=>String(v)},{l:"Receita",a:fat,m:db.meta.receita,f:brl},{l:"Lucro",a:luc,m:db.meta.lucro,f:brl}].map(({l,a,m,f})=>{
-            const p=m>0?Math.min(100,(a/m)*100):0;
-            return(<div key={l}><div style={{display:"flex",justifyContent:"space-between",fontSize:12,color:"#6b7280",marginBottom:2}}><span>{l}: <strong>{f(a)}</strong> / {f(m)}</span><span style={{fontWeight:700}}>{p.toFixed(0)}%</span></div><Prog value={Math.max(0,a)} max={m} color="#111"/></div>);
+          {[{l:"Pedidos",a:pm.length,m:db.meta.pedidos,f:v=>String(v)},{l:"Receita",a:fat,m:db.meta.receita,f:brl},{l:"Lucro",a:luc,m:db.meta.lucro,f:brl}].map(({l,a,m:mv,f})=>{
+            const p=mv>0?Math.min(100,(a/mv)*100):0;
+            return(<div key={l}><div style={{display:"flex",justifyContent:"space-between",fontSize:12,color:"#6b7280",marginBottom:2}}><span>{l}: <strong>{f(a)}</strong> / {f(mv)}</span><span style={{fontWeight:700}}>{p.toFixed(0)}%</span></div><Prog value={Math.max(0,a)} max={mv} color="#111"/></div>);
           })}
         </div>
       </Section>
@@ -744,7 +749,7 @@ function PagePedidos({db,onAdd,onEdit,onDelete,onUpdateMeta,statusInicial}){
                     <HRow key={p.id}>
                       <td style={{...TD,color:"#9ca3af"}}>{fmtData(p.data)}</td>
                       <td style={{...TD,color:"#6b7280",fontSize:12}}>#{p.id}</td>
-                      <td style={TD}><div style={{fontWeight:700,color:"#111"}}>{p.time||p.camisa}{p.ano&&` ${p.ano}`} {p.tamanho}</div><div style={{fontSize:11,color:"#9ca3af"}}>{p.cliente}{sb>0&&<span style={{color:"#dc2626"}}> · Receber {brl(sb)}</span>}</div></td>
+                      <td style={TD}><div style={{fontWeight:700,color:"#111"}}>{p.time||p.camisa}{p.ano&&` ${p.ano}`} {p.tamanho}</div><div style={{fontSize:11,color:"#9ca3af"}}>{p.cliente}{p.telefone&&<span> · 📞{p.telefone}</span>}{p.captacao&&<span style={{color:"#7c3aed"}}> · {p.captacao}</span>}{sb>0&&<span style={{color:"#dc2626"}}> · Receber {brl(sb)}</span>}</div></td>
                       <td style={{...TD,textAlign:"center"}}>{p.qtd||1}</td>
                       <td style={{...TD,fontWeight:700}}>{brl(v)}</td>
                       <td style={TD}>{brl(c)} <MargBadge marg={mg}/></td>
