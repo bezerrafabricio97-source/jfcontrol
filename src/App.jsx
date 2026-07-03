@@ -410,30 +410,39 @@ function FormPedido({inicial,produtos,onSave,onClose}){
 }
 
 function FormProduto({inicial,onSave,onClose}){
-  const vz={time:"Bahia",uniforme:"Uniforme 1",tamanho:"M",cor:"",qtd:0,qtdMin:1,custoProduto:45,custoTaxa:5,precoVenda:120,fornecedor:""};
+  const vz={time:"Bahia",ano:new Date().getFullYear(),uniforme:"Uniforme 1",tamanho:"M",
+    cor:"",qtd:0,qtdMin:1,custoProduto:45,custoTaxa:5,precoVenda:120,fornecedor:""};
   const [f,setF]=useState(inicial?{...vz,...inicial}:vz);
   const s=(k,v)=>setF(p=>({...p,[k]:v}));const n=(k,v)=>s(k,parseFloat(v)||0);
   const ct=r((f.custoProduto||0)+(f.custoTaxa||0));const mg=f.precoVenda>0?r(((f.precoVenda-ct)/f.precoVenda)*100):0;
+  const sep=(titulo)=><div style={{width:"100%",borderTop:"1px solid #f3f4f6",paddingTop:4,marginTop:4,
+    marginBottom:-4,fontSize:10,fontWeight:800,color:"#9ca3af",letterSpacing:"0.8px",
+    textTransform:"uppercase"}}>{titulo}</div>;
   return(<>
     <div style={{display:"flex",flexWrap:"wrap",gap:12}}>
-      <Field label="Time" half>
+      {sep("Identificação")}
+      <Field label="Time / Camisa" half>
         <Inp list="lst-te" value={f.time} onChange={e=>s("time",e.target.value)} placeholder="ex: Bahia" autoFocus/>
         <datalist id="lst-te">{TIMES.map(t=><option key={t} value={t}/>)}</datalist>
       </Field>
-      <Field label="Uniforme" half><Sel value={f.uniforme} onChange={e=>s("uniforme",e.target.value)}>{UNIFORMES.map(u=><option key={u}>{u}</option>)}</Sel></Field>
+      <Field label="Ano" third><Inp type="number" min="2000" max="2099" value={f.ano||new Date().getFullYear()} onChange={e=>s("ano",parseInt(e.target.value)||new Date().getFullYear())}/></Field>
+      <Field label="Uniforme" third><Sel value={f.uniforme} onChange={e=>s("uniforme",e.target.value)}>{UNIFORMES.map(u=><option key={u}>{u}</option>)}</Sel></Field>
       <Field label="Tamanho" third><Sel value={f.tamanho} onChange={e=>s("tamanho",e.target.value)}>{TAMANHOS.map(t=><option key={t}>{t}</option>)}</Sel></Field>
-      <Field label="Cor" third><Inp value={f.cor} onChange={e=>s("cor",e.target.value)} placeholder="ex: Azul/Vermelho"/></Field>
-      <Field label="Qtd Estoque" third><Inp type="number" min="0" value={f.qtd} onChange={e=>n("qtd",e.target.value)}/></Field>
-      <Field label="Qtd Mínima" half><Inp type="number" min="0" value={f.qtdMin} onChange={e=>n("qtdMin",e.target.value)}/></Field>
-      <Field label="Fornecedor" half><Inp value={f.fornecedor} onChange={e=>s("fornecedor",e.target.value)} placeholder="ex: Fornecedor Padrão"/></Field>
-      <Field label="Custo Produto (R$)" third><Inp type="number" min="0" step="0.01" value={f.custoProduto} onChange={e=>n("custoProduto",e.target.value)}/></Field>
-      <Field label="Custo Taxa (R$)" third><Inp type="number" min="0" step="0.01" value={f.custoTaxa} onChange={e=>n("custoTaxa",e.target.value)}/></Field>
+      <Field label="Cor" third><Inp value={f.cor} onChange={e=>s("cor",e.target.value)} placeholder="ex: Azul"/></Field>
+
+      {sep("Estoque")}
+      <Field label="Quantidade em Estoque" half><Inp type="number" min="0" value={f.qtd} onChange={e=>n("qtd",e.target.value)}/></Field>
+      <Field label="Quantidade Mínima" half><Inp type="number" min="0" value={f.qtdMin} onChange={e=>n("qtdMin",e.target.value)}/></Field>
+
+      {sep("Financeiro")}
+      <Field label="Custo de Compra (R$)" third><Inp type="number" min="0" step="0.01" value={f.custoProduto} onChange={e=>n("custoProduto",e.target.value)}/></Field>
+      <Field label="Custo de Taxa (R$)" third><Inp type="number" min="0" step="0.01" value={f.custoTaxa} onChange={e=>n("custoTaxa",e.target.value)}/></Field>
       <Field label="Preço de Venda (R$)" third><Inp type="number" min="0" step="0.01" value={f.precoVenda} onChange={e=>n("precoVenda",e.target.value)}/></Field>
     </div>
     <InfoBox items={[
       {label:"Custo Total",value:brl(ct),color:"#dc2626"},
-      {label:"Margem",value:pct(mg),color:mg>=30?"#16a34a":mg>=15?"#ca8a04":"#dc2626"},
       {label:"Lucro Unit.",value:brl(r(f.precoVenda-ct)),color:f.precoVenda-ct>=0?"#16a34a":"#dc2626"},
+      {label:"Margem",value:pct(mg),color:mg>=30?"#16a34a":mg>=15?"#ca8a04":"#dc2626"},
     ]}/>
     <MBtns onClose={onClose} onSave={()=>{if(!f.time.trim())return alert("Informe o time.");onSave(f);}}/>
   </>);
@@ -665,70 +674,94 @@ function PageDashboard({db,setDb,onNavigate}){
 // ── ESTOQUE ──────────────────────────────────────────────────
 function PageEstoque({db,onAdd,onEdit,onDelete}){
   const [busca,setBusca]=useState("");const [ft,setFt]=useState("Todos");
-  const baixos=db.produtos.filter(isBaixo);
   const total=db.produtos.reduce((a,p)=>a+p.qtd,0);
   const valor=db.produtos.reduce((a,p)=>a+p.qtd*(p.custoProduto||0),0);
   const times=["Todos",...new Set(db.produtos.map(p=>p.time||p.nome).filter(Boolean))];
   const filtrados=db.produtos.filter(p=>
-    (!busca||(p.time||p.nome||"").toLowerCase().includes(busca.toLowerCase())||p.tamanho?.toLowerCase().includes(busca.toLowerCase()))
+    (!busca||(p.time||p.nome||"").toLowerCase().includes(busca.toLowerCase())
+      ||p.tamanho?.toLowerCase().includes(busca.toLowerCase())
+      ||(p.cor||"").toLowerCase().includes(busca.toLowerCase()))
     &&(ft==="Todos"||(p.time||p.nome)===ft));
+
+  const IC = {width:32,height:32,borderRadius:7,border:"1px solid #e5e7eb",background:"#f9fafb",
+    cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:"#374151"};
+  const IC_DEL = {...IC,border:"1px solid #fecaca",background:"#fef2f2",color:"#dc2626"};
+
   return(
     <div>
-      {/* Alerta estoque baixo - sem IA */}
-      {baixos.length>0&&(
-        <Alert type="warning">
-          <span style={{fontWeight:800}}>⚠ Estoque abaixo do mínimo:</span>
-          {baixos.map(p=><span key={p.id} style={{background:"#fde68a",borderRadius:6,padding:"2px 8px",fontSize:12,fontWeight:700,marginLeft:6}}>
-            {p.time||p.nome} {p.uniforme&&`(${p.uniforme})`} {p.tamanho} — {p.qtd} un.
-          </span>)}
-        </Alert>
-      )}
-
-      {/* KPIs */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:14,marginBottom:20}}>
-        <KPI label="Total Peças" value={total}/>
-        <KPI label="Estoque Baixo" value={baixos.length} color={baixos.length>0?"#ca8a04":"#16a34a"}/>
+      {/* KPIs — apenas o essencial */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:14,marginBottom:20}}>
+        <KPI label="Total em Estoque" value={`${total} peça${total!==1?"s":""}`}/>
         <KPI label="Valor em Estoque" value={brl(valor)}/>
       </div>
 
       <Section>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:10}}>
-          <div style={{fontWeight:800,fontSize:15,color:"#111"}}>{filtrados.length} produto{filtrados.length!==1?"s":""}</div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",
+          marginBottom:14,flexWrap:"wrap",gap:10}}>
+          <div style={{fontWeight:800,fontSize:15,color:"#111"}}>
+            {filtrados.length} camisa{filtrados.length!==1?"s":""}
+          </div>
           <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
             <Tabs options={times.map(t=>({k:t,l:t}))} value={ft} onChange={setFt}/>
-            <Inp value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Buscar produto..." style={{...INP,width:180}}/>
-            <Btn onClick={onAdd}>+ Produto</Btn>
+            <Inp value={busca} onChange={e=>setBusca(e.target.value)}
+              placeholder="Buscar..." style={{...INP,width:160}}/>
+            <Btn onClick={onAdd}>+ Camisa</Btn>
           </div>
         </div>
-        {filtrados.length===0?<Empty msg="Nenhum produto encontrado." icon="📦"/>:(
+
+        {filtrados.length===0?<Empty msg="Nenhuma camisa encontrada." icon="👕"/>:(
           <div style={{overflowX:"auto"}}>
             <table style={{width:"100%",borderCollapse:"collapse"}}>
-              <thead><tr>{["Produto","Cor / Tam","QTD","Custo","Status",""].map(h=><th key={h} style={TH}>{h}</th>)}</tr></thead>
+              <thead>
+                <tr>{["Time / Camisa","Uniforme","Tam.","Cor","Custo","Qtd","Mín.","Status",""].map(h=>
+                  <th key={h} style={TH}>{h}</th>)}
+                </tr>
+              </thead>
               <tbody>
                 {filtrados.map(p=>{
                   const ct=r((p.custoProduto||0)+(p.custoTaxa||0));
                   const min=estoqueMinimo(p);
+                  const ok=p.qtd>=min;
+                  const zero=p.qtd===0;
                   return(
                     <HRow key={p.id}>
                       <td style={TD}>
-                        <div style={{fontWeight:700,color:"#111"}}>{p.time||p.nome}</div>
-                        {p.uniforme&&<div style={{fontSize:11,color:"#9ca3af",marginTop:2}}>{p.uniforme}</div>}
+                        <div style={{fontWeight:700,color:"#111",fontSize:13}}>
+                          {p.time||p.nome}{p.ano&&<span style={{color:"#9ca3af",fontWeight:400}}> {p.ano}</span>}
+                        </div>
                       </td>
-                      <td style={TD}>{p.cor&&`${p.cor} / `}{p.tamanho}</td>
-                      <td style={TD}>
-                        <span style={{fontWeight:700,color:p.qtd===0?"#dc2626":p.qtd<min?"#ca8a04":"#111",fontSize:15}}>{p.qtd}</span>
-                        <span style={{fontSize:10,color:"#9ca3af",marginLeft:4}}>(mín {min})</span>
-                      </td>
+                      <td style={{...TD,color:"#6b7280",fontSize:12}}>{p.uniforme||"—"}</td>
+                      <td style={{...TD,fontWeight:600}}>{p.tamanho}</td>
+                      <td style={{...TD,color:"#6b7280",fontSize:12}}>{p.cor||"—"}</td>
                       <td style={TD}>{brl(ct)}</td>
-                      <td style={TD}><StockBadge qtd={p.qtd} qtdMin={min}/></td>
-                      <td style={TD}><div style={{display:"flex",gap:5}}>
-                        <button onClick={()=>onEdit(p)} title="Editar" style={{width:32,height:32,borderRadius:7,border:"1px solid #e5e7eb",background:"#f9fafb",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:"#374151"}}>
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>
-                        </button>
-                        <button onClick={()=>onDelete(p.id)} title="Excluir" style={{width:32,height:32,borderRadius:7,border:"1px solid #fecaca",background:"#fef2f2",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:"#dc2626"}}>
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
-                        </button>
-                      </div></td>
+                      <td style={TD}>
+                        <span style={{fontWeight:800,fontSize:15,
+                          color:zero?"#dc2626":!ok?"#ca8a04":"#16a34a"}}>
+                          {p.qtd}
+                        </span>
+                      </td>
+                      <td style={{...TD,color:"#9ca3af",fontSize:12}}>{min}</td>
+                      <td style={TD}>
+                        <span style={{
+                          background:zero?"#fef2f2":!ok?"#fffbeb":"#f0fdf4",
+                          color:zero?"#dc2626":!ok?"#92400e":"#166534",
+                          border:`1px solid ${zero?"#fecaca":!ok?"#fde68a":"#bbf7d0"}`,
+                          padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:700,
+                          whiteSpace:"nowrap"
+                        }}>
+                          {zero?"Esgotado":!ok?"Baixo":"OK"}
+                        </span>
+                      </td>
+                      <td style={TD}>
+                        <div style={{display:"flex",gap:5}}>
+                          <button onClick={()=>onEdit(p)} title="Editar" style={IC}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>
+                          </button>
+                          <button onClick={()=>onDelete(p.id)} title="Excluir" style={IC_DEL}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+                          </button>
+                        </div>
+                      </td>
                     </HRow>
                   );
                 })}
