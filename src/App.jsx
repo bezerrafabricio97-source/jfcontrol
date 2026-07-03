@@ -298,7 +298,8 @@ function Alert({type,children}){
 
 // ── FORMULÁRIOS ──────────────────────────────────────────────
 function FormPedido({inicial,produtos,onSave,onClose}){
-  const vz={data:hoje(),cliente:"",telefone:"",captacao:"",time:"",ano:new Date().getFullYear(),uniforme:"Uniforme 1",tamanho:"M",qtd:1,
+  const vz={data:hoje(),cliente:"",telefone:"",captacao:"",time:"",ano:new Date().getFullYear(),
+    uniforme:"Uniforme 1",tamanho:"M",qtd:1,
     precoVenda:0,valorRecebido:0,custoProduto:0,custoTaxa:0,status:"A Fazer",obs:""};
   const [f,setF]=useState(inicial?{...vz,...inicial}:vz);
   const s=(k,v)=>setF(p=>({...p,[k]:v}));const n=(k,v)=>s(k,parseFloat(v)||0);
@@ -308,26 +309,45 @@ function FormPedido({inicial,produtos,onSave,onClose}){
   const v=r((f.precoVenda||0)*(f.qtd||1));const c=r(((f.custoProduto||0)+(f.custoTaxa||0))*(f.qtd||1));
   const l=r(v-c);const sb=r(v-(f.valorRecebido||0));const mg=v>0?r((l/v)*100):0;
   const times=[...new Set([...produtos.map(p=>p.time||p.nome).filter(Boolean),...TIMES])];
+  const sep=(titulo)=><div style={{width:"100%",borderTop:"1px solid #f3f4f6",paddingTop:4,marginTop:4,
+    marginBottom:-4,fontSize:10,fontWeight:800,color:"#9ca3af",letterSpacing:"0.8px",
+    textTransform:"uppercase"}}>{titulo}</div>;
   return(<>
     <div style={{display:"flex",flexWrap:"wrap",gap:12}}>
-      <Field label="Data" half><Inp type="date" value={f.data} onChange={e=>s("data",e.target.value)}/></Field>
-      <Field label="Status" half><Sel value={f.status} onChange={e=>s("status",e.target.value)}>{ST_PEDIDO_FORM.map(st=><option key={st}>{st}</option>)}</Sel></Field>
+
+      {/* Bloco: Pedido */}
+      {sep("Pedido")}
+      <Field label="Data" third><Inp type="date" value={f.data} onChange={e=>s("data",e.target.value)}/></Field>
+      <Field label="Status" third><Sel value={f.status} onChange={e=>s("status",e.target.value)}>{ST_PEDIDO_FORM.map(st=><option key={st}>{st}</option>)}</Sel></Field>
+      <div style={{flex:"0 0 calc(33.3% - 8px)"}}/>
+
+      {/* Bloco: Cliente */}
+      {sep("Cliente")}
       <Field label="Nome do Cliente" half><Inp value={f.cliente} onChange={e=>s("cliente",e.target.value)} placeholder="Nome completo" autoFocus/></Field>
       <Field label="Telefone" half><Inp value={f.telefone||""} onChange={e=>s("telefone",e.target.value)} placeholder="(xx) xxxxx-xxxx"/></Field>
       <Field label="Local de Captação"><Inp value={f.captacao||""} onChange={e=>s("captacao",e.target.value)} placeholder="ex: Instagram, WhatsApp, Loja física, Indicação..."/></Field>
+
+      {/* Bloco: Produto */}
+      {sep("Produto")}
       <Field label="Time / Camisa" half>
         <Inp list="lst-tp" value={f.time} onChange={e=>fill(e.target.value)} placeholder="ex: Vitória Rubro Negra"/>
         <datalist id="lst-tp">{times.map(t=><option key={t} value={t}/>)}</datalist>
       </Field>
       <Field label="Ano" third><Inp type="number" min="2000" max="2099" value={f.ano||new Date().getFullYear()} onChange={e=>s("ano",parseInt(e.target.value)||new Date().getFullYear())}/></Field>
       <Field label="Uniforme" third><Sel value={f.uniforme} onChange={e=>s("uniforme",e.target.value)}>{UNIFORMES.map(u=><option key={u}>{u}</option>)}</Sel></Field>
-      <Field label="Tamanho" third><Sel value={f.tamanho} onChange={e=>s("tamanho",e.target.value)}>{TAMANHOS.map(t=><option key={t}>{t}</option>)}</Sel></Field>
-      <Field label="Quantidade" third><Inp type="number" min="1" value={f.qtd} onChange={e=>n("qtd",e.target.value)}/></Field>
+      <Field label="Tamanho" half><Sel value={f.tamanho} onChange={e=>s("tamanho",e.target.value)}>{TAMANHOS.map(t=><option key={t}>{t}</option>)}</Sel></Field>
+
+      {/* Bloco: Financeiro */}
+      {sep("Financeiro")}
       <Field label="Preço de Venda" third><Inp type="number" min="0" step="0.01" value={f.precoVenda} onChange={e=>n("precoVenda",e.target.value)}/></Field>
-      <Field label="Valor já Recebido (R$)"><Inp type="number" min="0" step="0.01" value={f.valorRecebido} onChange={e=>n("valorRecebido",e.target.value)} placeholder="0 = não recebeu ainda"/></Field>
+      <Field label="Valor Recebido (R$)" third><Inp type="number" min="0" step="0.01" value={f.valorRecebido} onChange={e=>n("valorRecebido",e.target.value)} placeholder="0"/></Field>
+      <div style={{flex:"0 0 calc(33.3% - 8px)"}}/>
       <Field label="Custo Produto" half><Inp type="number" min="0" step="0.01" value={f.custoProduto} onChange={e=>n("custoProduto",e.target.value)}/></Field>
       <Field label="Custo Taxa" half><Inp type="number" min="0" step="0.01" value={f.custoTaxa} onChange={e=>n("custoTaxa",e.target.value)}/></Field>
-      <Field label="Observação"><Inp value={f.obs} onChange={e=>s("obs",e.target.value)} placeholder="ex: parcelado, entrega especial..."/></Field>
+
+      {/* Bloco: Extra */}
+      {sep("Observação")}
+      <Field label="Observação"><Inp value={f.obs} onChange={e=>s("obs",e.target.value)} placeholder="ex: parcelado, entrega especial, presente..."/></Field>
     </div>
     <InfoBox items={[
       {label:"Total Vendido",value:brl(v)},
@@ -683,7 +703,7 @@ function PagePedidos({db,onAdd,onEdit,onDelete,onUpdateMeta,statusInicial}){
   return(
     <div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16}}>
-        <div><div style={{fontSize:22,fontWeight:800,color:"#111"}}>Pedidos</div><div style={{fontSize:13,color:"#9ca3af"}}>{nomeMesKPI}</div></div>
+        <div style={{fontSize:22,fontWeight:800,color:"#111"}}>Pedidos</div>
         <div style={{display:"flex",gap:8}}><Btn v="sec" onClick={()=>{setMt({...db.meta});setMm(true);}}>🎯 Meta</Btn><Btn onClick={onAdd}>+ Pedido</Btn></div>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:12,marginBottom:16}}>
