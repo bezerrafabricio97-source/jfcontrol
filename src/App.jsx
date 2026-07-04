@@ -505,14 +505,7 @@ function PageDashboard({db,setDb,onNavigate}){
         </div>
       </div>
 
-      {/* Alertas */}
-      {baixos.length>0&&(
-        <Alert type="warning">
-          <span style={{fontWeight:800}}>⚠ Estoque baixo:</span>
-          {baixos.slice(0,5).map(p=><span key={p.id} style={{background:"#fde68a",borderRadius:6,padding:"2px 8px",fontSize:12,fontWeight:700}}>{p.time} {p.tamanho} ({p.qtd}un)</span>)}
-          {baixos.length>5&&<span>+{baixos.length-5} mais</span>}
-        </Alert>
-      )}
+
 
       {/* 4 KPIs operacionais — clicáveis, levam direto para Pedidos já filtrado */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14}}>
@@ -632,40 +625,6 @@ function PageDashboard({db,setDb,onNavigate}){
         )}
       </Section>
 
-      {/* Últimos pedidos */}
-      <Section title={`🕐 Pedidos de ${nomeMesSel}`}>
-        {pm.length===0?<Empty msg="Nenhum pedido neste mês." icon="🛒"/>:(
-          <div style={{overflowX:"auto"}}>
-            <table style={{width:"100%",borderCollapse:"collapse"}}>
-              <thead><tr>{["Data","Cliente","Camisa","Tam.","Custo","Taxa","Vendido","Recebido","Lucro","Margem","Status"].map(h=><th key={h} style={TH}>{h}</th>)}</tr></thead>
-              <tbody>
-                {[...pm].reverse().map(p=>{
-                  const v=r((p.precoVenda||0)*(p.qtd||1));
-                  const custo=r((p.custoProduto||0)*(p.qtd||1));
-                  const taxa=r((p.custoTaxa||0)*(p.qtd||1));
-                  const lucro=r(v-custo-taxa);
-                  const margem=v>0?r((lucro/v)*100):0;
-                  return(
-                    <HRow key={p.id}>
-                      <td style={{...TD,color:"#9ca3af"}}>{fmtData(p.data)}</td>
-                      <td style={{...TD,fontWeight:700,color:"#111"}}>{p.cliente}</td>
-                      <td style={TD}>{p.time||p.camisa}{p.ano&&` ${p.ano}`} {p.uniforme&&`(${p.uniforme})`}</td>
-                      <td style={TD}>{p.tamanho}</td>
-                      <td style={{...TD,color:"#dc2626"}}>{brl(custo)}</td>
-                      <td style={{...TD,color:"#dc2626"}}>{brl(taxa)}</td>
-                      <td style={{...TD,fontWeight:700}}>{brl(v)}</td>
-                      <td style={{...TD,color:"#16a34a",fontWeight:700}}>{brl(p.valorRecebido||0)}</td>
-                      <td style={{...TD,fontWeight:700,color:lucro>=0?"#16a34a":"#dc2626"}}>{brl(lucro)}</td>
-                      <td style={{...TD,fontWeight:700,color:margem>=0?"#16a34a":"#dc2626"}}>{margem.toFixed(0)}%</td>
-                      <td style={TD}><Badge status={p.status} estoque={isEstoque(p)}/></td>
-                    </HRow>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Section>
 
     </div>
   );
@@ -691,8 +650,8 @@ function PageEstoque({db,onAdd,onEdit,onDelete}){
     <div>
       {/* KPIs — apenas o essencial */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:14,marginBottom:20}}>
-        <KPI label="Total em Estoque" value={`${total} peça${total!==1?"s":""}`}/>
-        <KPI label="Valor em Estoque" value={brl(valor)}/>
+        <KPI label="📦 Total em Estoque" value={`${total} peça${total!==1?"s":""}`}/>
+        <KPI label="💰 Valor em Estoque" value={brl(valor)}/>
       </div>
 
       <Section>
@@ -713,7 +672,7 @@ function PageEstoque({db,onAdd,onEdit,onDelete}){
           <div style={{overflowX:"auto"}}>
             <table style={{width:"100%",borderCollapse:"collapse"}}>
               <thead>
-                <tr>{["Time / Camisa","Uniforme","Tam.","Cor","Custo","Qtd","Mín.","Status",""].map(h=>
+                <tr>{["Time / Camisa","Uniforme","Ano","Tam.","Cor","Custo","Qtd","Mín.","Status",""].map(h=>
                   <th key={h} style={TH}>{h}</th>)}
                 </tr>
               </thead>
@@ -731,6 +690,7 @@ function PageEstoque({db,onAdd,onEdit,onDelete}){
                         </div>
                       </td>
                       <td style={{...TD,color:"#6b7280",fontSize:12}}>{p.uniforme||"—"}</td>
+                      <td style={{...TD,color:"#6b7280",fontSize:12}}>{p.ano||"—"}</td>
                       <td style={{...TD,fontWeight:600}}>{p.tamanho}</td>
                       <td style={{...TD,color:"#6b7280",fontSize:12}}>{p.cor||"—"}</td>
                       <td style={TD}>{brl(ct)}</td>
