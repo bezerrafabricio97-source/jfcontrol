@@ -539,7 +539,7 @@ function PageDashboard({db,setDb,onNavigate}){
         {pm.length===0?<Empty msg="Nenhum pedido neste mês." icon="🛒"/>:(
           <div style={{overflowX:"auto"}}>
             <table style={{width:"100%",borderCollapse:"collapse"}}>
-              <thead><tr>{["Data","Cliente","Camisa","Tam.","Custo","Taxa","Vendido","Recebido","Lucro","Margem","Status"].map(h=><th key={h} style={TH}>{h}</th>)}</tr></thead>
+              <thead><tr>{["Data","Cliente","Camisa","Tam.","Custo","Taxa","Vendido","Recebido","A Receber","Lucro","Margem","Status"].map(h=><th key={h} style={h==="A Receber"?{...TH,color:"#dc2626"}:TH}>{h}</th>)}</tr></thead>
               <tbody>
                 {[...pm].reverse().map(p=>{
                   const v=r((p.precoVenda||0)*(p.qtd||1));
@@ -547,6 +547,7 @@ function PageDashboard({db,setDb,onNavigate}){
                   const taxa=r((p.custoTaxa||0)*(p.qtd||1));
                   const lucro=r(v-custo-taxa);
                   const margem=v>0?r((lucro/v)*100):0;
+                  const sb=r(v-(p.valorRecebido||0));
                   return(
                     <HRow key={p.id}>
                       <td style={{...TD,color:"#9ca3af"}}>{fmtData(p.data)}</td>
@@ -556,7 +557,15 @@ function PageDashboard({db,setDb,onNavigate}){
                       <td style={{...TD,color:"#dc2626"}}>{brl(custo)}</td>
                       <td style={{...TD,color:"#dc2626"}}>{brl(taxa)}</td>
                       <td style={{...TD,fontWeight:700}}>{brl(v)}</td>
-                      <td style={{...TD,color:"#16a34a",fontWeight:700}}>{brl(p.valorRecebido||0)}</td>
+                      <td style={TD}>
+                        <div style={{fontWeight:700,color:"#16a34a"}}>{brl(p.valorRecebido||0)}</div>
+                      </td>
+                      <td style={TD}>
+                        {sb>0
+                          ?<div style={{fontWeight:800,color:"#dc2626",fontSize:13}}>{brl(sb)}</div>
+                          :<div style={{color:"#16a34a",fontSize:12,fontWeight:700}}>✓ Pago</div>
+                        }
+                      </td>
                       <td style={{...TD,fontWeight:700,color:lucro>=0?"#16a34a":"#dc2626"}}>{brl(lucro)}</td>
                       <td style={{...TD,fontWeight:700,color:margem>=0?"#16a34a":"#dc2626"}}>{margem.toFixed(0)}%</td>
                       <td style={TD}><Badge status={p.status} estoque={isEstoque(p)}/></td>
@@ -640,7 +649,18 @@ function PageEstoque({db,onAdd,onEdit,onDelete}){
     (!busca||(p.time||p.nome||"").toLowerCase().includes(busca.toLowerCase())
       ||p.tamanho?.toLowerCase().includes(busca.toLowerCase())
       ||(p.cor||"").toLowerCase().includes(busca.toLowerCase()))
-    &&(ft==="Todos"||(p.time||p.nome)===ft));
+    &&(ft==="Todos"||(p.time||p.nome)===ft))
+    .sort((a,b)=>{
+      const na=(a.time||a.nome||"").toLowerCase();
+      const nb=(b.time||b.nome||"").toLowerCase();
+      if(na<nb)return -1;if(na>nb)return 1;
+      // Mesmo time: ordena por uniforme, depois tamanho
+      const ua=(a.uniforme||"").toLowerCase();
+      const ub=(b.uniforme||"").toLowerCase();
+      if(ua<ub)return -1;if(ua>ub)return 1;
+      const ORDER=["PP","P","M","G","GG","XGG","3G","4G"];
+      return ORDER.indexOf(a.tamanho)-ORDER.indexOf(b.tamanho);
+    });
 
   const IC = {width:32,height:32,borderRadius:7,border:"1px solid #e5e7eb",background:"#f9fafb",
     cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:"#374151"};
@@ -672,7 +692,7 @@ function PageEstoque({db,onAdd,onEdit,onDelete}){
           <div style={{overflowX:"auto"}}>
             <table style={{width:"100%",borderCollapse:"collapse"}}>
               <thead>
-                <tr>{["Time / Camisa","Uniforme","Ano","Tam.","Cor","Custo","Qtd","Mín.","Status",""].map(h=>
+                <tr>{["Time / Camisa","Uniforme","Ano","Tam.","Cor","Custo","Qtd","Status",""].map(h=>
                   <th key={h} style={TH}>{h}</th>)}
                 </tr>
               </thead>
@@ -700,7 +720,6 @@ function PageEstoque({db,onAdd,onEdit,onDelete}){
                           {p.qtd}
                         </span>
                       </td>
-                      <td style={{...TD,color:"#9ca3af",fontSize:12}}>{min}</td>
                       <td style={TD}>
                         <span style={{
                           background:zero?"#fef2f2":!ok?"#fffbeb":"#f0fdf4",
