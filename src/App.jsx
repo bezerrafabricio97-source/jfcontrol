@@ -859,7 +859,19 @@ function PagePedidos({db,onAdd,onEdit,onDelete,onUpdateMeta,statusInicial}){
                     <HRow key={p.id}>
                       <td style={{...TD,color:"#9ca3af"}}>{fmtData(p.data)}</td>
                       <td style={{...TD,color:"#6b7280",fontSize:12}}>#{p.id}</td>
-                      <td style={TD}><div style={{fontWeight:700,color:"#111"}}>{p.time||p.camisa}{p.ano&&` ${p.ano}`} {p.tamanho}</div><div style={{fontSize:11,color:"#9ca3af"}}>{p.cliente}{p.telefone&&<span> · 📞{p.telefone}</span>}{p.captacao&&<span style={{color:"#7c3aed"}}> · {p.captacao}</span>}{sb>0&&<span style={{color:"#dc2626"}}> · Receber {brl(sb)}</span>}</div></td>
+                      <td style={TD}>
+                        <div style={{fontWeight:700,color:"#111",fontSize:13}}>
+                          {p.time||p.camisa}{p.ano&&` ${p.ano}`}
+                          {p.tamanho&&<span style={{color:"#6b7280",fontWeight:500}}> · {p.tamanho}</span>}
+                          {p.cor&&<span style={{color:"#9ca3af",fontWeight:400,fontSize:12}}> · {p.cor}</span>}
+                        </div>
+                        <div style={{fontSize:11,color:"#9ca3af",marginTop:3,display:"flex",flexWrap:"wrap",alignItems:"center",gap:4}}>
+                          {p.cliente&&!isEstoque(p)&&<span style={{color:"#374151",fontWeight:600}}>{p.cliente}</span>}
+                          {p.telefone&&<span>· 📞 {p.telefone}</span>}
+                          {p.captacao&&<span style={{color:"#7c3aed",fontWeight:500}}>· {p.captacao}</span>}
+                          {sb>0&&!isEstoque(p)&&<span style={{color:"#dc2626",fontWeight:700}}>· Receber {brl(sb)}</span>}
+                        </div>
+                      </td>
                       <td style={{...TD,textAlign:"center"}}>{p.qtd||1}</td>
                       <td style={{...TD,fontWeight:700}}>{brl(v)}</td>
                       <td style={TD}>{brl(c)} <MargBadge marg={mg}/></td>
