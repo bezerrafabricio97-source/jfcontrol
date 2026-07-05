@@ -954,56 +954,119 @@ function PageCusto({db,setDb}){
   const m=mesAtual();const hj=hoje();const sw=semIni();const mp=mesPrev();
   const FILTROS=[{k:"hoje",l:"Hoje"},{k:"semana",l:"Esta semana"},{k:"mes",l:"Este mês"},{k:"mes_ant",l:"Mês passado"},{k:"todos",l:"Todos"}];
   const fd2=x=>{const d=x.data||"";if(filtro==="hoje")return d===hj;if(filtro==="semana")return d>=sw;if(filtro==="mes_ant")return d.startsWith(mp);if(filtro==="todos")return true;return d.startsWith(m);};
-  const peds=db.pedidos.filter(fd2);
-  const rec=peds.reduce((a,p)=>a+(p.precoVenda||0)*(p.qtd||1),0);
-  const cusProd=peds.reduce((a,p)=>a+(p.custoProduto||0)*(p.qtd||1),0);
-  const cusTaxa=peds.reduce((a,p)=>a+(p.custoTaxa||0)*(p.qtd||1),0);
+
+  // Pedidos de venda (sem estoque) no período
+  const peds=db.pedidos.filter(p=>fd2(p)&&!isEstoque(p));
+  const recTotal=r(peds.reduce((a,p)=>a+(p.precoVenda||0)*(p.qtd||1),0));
+  const recebido=r(peds.reduce((a,p)=>a+(p.valorRecebido||0),0));
+  const aReceber=r(recTotal-recebido);
+  const cusProd=r(peds.reduce((a,p)=>a+(p.custoProduto||0)*(p.qtd||1),0));
+  const cusTaxa=r(peds.reduce((a,p)=>a+(p.custoTaxa||0)*(p.qtd||1),0));
+
+  // Despesas manuais (Caixa - tipo Saída) no período
   const despesas=db.caixa.filter(c=>c.tipo==="Saída"&&fd2(c));
-  const totDesp=despesas.reduce((a,c)=>a+(c.valor||0),0);
-  const lucLiq=r(rec-cusProd-cusTaxa-totDesp);
-  const salvD=()=>{if(!fd.descricao.trim())return alert("Informe a descrição.");if(!fd.valor||fd.valor<=0)return alert("Informe o valor.");setDb(prev=>{const id=prev.nextId+1;return{...prev,nextId:id,caixa:[...prev.caixa,{...fd,tipo:"Saída",id}]};});setFd({data:hoje(),categoria:"Produto / Estoque",descricao:"",valor:0});setModalD(false);};
+  const totDesp=r(despesas.reduce((a,c)=>a+(c.valor||0),0));
+
+  const cusTotal=r(cusProd+cusTaxa+totDesp);
+  const lucBruto=r(recTotal-cusProd-cusTaxa);
+  const lucLiq=r(recTotal-cusTotal);
+  const marg=recTotal>0?r((lucLiq/recTotal)*100):0;
+
+  const salvD=()=>{
+    if(!fd.descricao.trim())return alert("Informe a descrição.");
+    if(!fd.valor||fd.valor<=0)return alert("Informe o valor.");
+    setDb(prev=>{const id=prev.nextId+1;return{...prev,nextId:id,caixa:[...prev.caixa,{...fd,tipo:"Saída",id}]};});
+    setFd({data:hoje(),categoria:"Produto / Estoque",descricao:"",valor:0});
+    setModalD(false);
+  };
   const delD=id=>{if(!window.confirm("Excluir?"))return;setDb(prev=>({...prev,caixa:prev.caixa.filter(c=>c.id!==id)}));};
+
   return(
     <div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16}}>
-        <div><div style={{fontSize:22,fontWeight:800,color:"#111"}}>Custo / Lucro</div><div style={{fontSize:13,color:"#9ca3af"}}>Despesas e resultado</div></div>
+        <div style={{fontSize:22,fontWeight:800,color:"#111"}}>Custo / Lucro</div>
         <Btn onClick={()=>setModalD(true)}>+ Despesa</Btn>
       </div>
       <div style={{marginBottom:16}}><Tabs options={FILTROS} value={filtro} onChange={setFiltro}/></div>
-      <Section>
-        <div style={{fontWeight:800,fontSize:13,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:16}}>RESUMO</div>
-        {[{icon:"💰",label:"Receita Total",value:brl(rec),color:"#111"},{icon:"📦",label:"Custo Produtos",value:`- ${brl(cusProd)}`,color:"#dc2626"},{icon:"📋",label:"Taxas / Importação",value:`- ${brl(cusTaxa)}`,color:"#dc2626"},{icon:"📊",label:"Despesas",value:`- ${brl(totDesp)}`,color:"#dc2626"}].map(({icon,label,value,color})=>(
-          <div key={label} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 0",borderBottom:"1px solid #f5f5f5"}}>
-            <span style={{fontSize:14,color:"#374151"}}>{icon} {label}</span>
-            <span style={{fontSize:15,fontWeight:600,color}}>{value}</span>
+
+      {/* KPIs principais */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:16}}>
+        <KPI label="💰 Faturamento" value={brl(recTotal)} color="#111"/>
+        <KPI label="✅ Recebido" value={brl(recebido)} color="#16a34a"/>
+        <KPI label="⏳ A Receber" value={brl(aReceber)} color={aReceber>0?"#ca8a04":"#16a34a"}/>
+        <KPI label="📊 Margem" value={`${marg.toFixed(1)}%`} color={marg>=30?"#16a34a":marg>=15?"#ca8a04":"#dc2626"}/>
+      </div>
+
+      {/* Resumo financeiro */}
+      <Section title="📋 Resumo do Período">
+        {[
+          {icon:"💰",label:"Receita Total (vendas)",value:brl(recTotal),color:"#111",bold:false},
+          {icon:"📦",label:"Custo dos Produtos",value:`- ${brl(cusProd)}`,color:"#dc2626",bold:false},
+          {icon:"📋",label:"Taxas / Importação",value:`- ${brl(cusTaxa)}`,color:"#dc2626",bold:false},
+          {icon:"🏆",label:"Lucro Bruto",value:brl(lucBruto),color:lucBruto>=0?"#16a34a":"#dc2626",bold:true},
+          {icon:"🧾",label:"Despesas (frete, outros)",value:`- ${brl(totDesp)}`,color:"#dc2626",bold:false},
+        ].map(({icon,label,value,color,bold})=>(
+          <div key={label} style={{display:"flex",justifyContent:"space-between",alignItems:"center",
+            padding:"12px 0",borderBottom:"1px solid #f5f5f5"}}>
+            <span style={{fontSize:14,color:"#374151",fontWeight:bold?700:400}}>{icon} {label}</span>
+            <span style={{fontSize:bold?17:15,fontWeight:bold?800:600,color}}>{value}</span>
           </div>
         ))}
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 0",borderTop:"2px solid #e5e7eb",marginTop:4}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",
+          padding:"16px 0",borderTop:"2px solid #e5e7eb",marginTop:4}}>
           <span style={{fontSize:16,fontWeight:800,color:"#111"}}>🎯 Lucro Líquido</span>
-          <span style={{fontSize:20,fontWeight:900,color:lucLiq>=0?"#16a34a":"#dc2626"}}>{brl(lucLiq)}</span>
+          <span style={{fontSize:22,fontWeight:900,color:lucLiq>=0?"#16a34a":"#dc2626"}}>{brl(lucLiq)}</span>
         </div>
       </Section>
-      <Section title="Despesas">
-        {despesas.length===0?<Empty msg="Nenhuma despesa neste período." icon="📊"/>:(
+
+      {/* Pedidos no período */}
+      <Section title={`🛒 Pedidos (${peds.length})`}>
+        {peds.length===0?<Empty msg="Nenhum pedido de venda neste período." icon="🛒"/>:(
+          <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}>
+            <thead><tr>{["Data","Cliente","Camisa","Vendido","Recebido","Custo","Lucro","Margem","Status"].map(h=><th key={h} style={TH}>{h}</th>)}</tr></thead>
+            <tbody>{[...peds].reverse().map(p=>{
+              const v=r((p.precoVenda||0)*(p.qtd||1));
+              const c=r(((p.custoProduto||0)+(p.custoTaxa||0))*(p.qtd||1));
+              const l=r(v-c);const mg2=v>0?r((l/v)*100):0;
+              return<HRow key={p.id}>
+                <td style={{...TD,color:"#9ca3af"}}>{fmtData(p.data)}</td>
+                <td style={{...TD,fontWeight:700}}>{p.cliente}</td>
+                <td style={TD}>{p.time||p.camisa}{p.ano?` ${p.ano}`:""} {p.tamanho}</td>
+                <td style={{...TD,fontWeight:700}}>{brl(v)}</td>
+                <td style={{...TD,color:"#16a34a",fontWeight:700}}>{brl(p.valorRecebido||0)}</td>
+                <td style={{...TD,color:"#dc2626"}}>{brl(c)}</td>
+                <td style={{...TD,fontWeight:700,color:l>=0?"#16a34a":"#dc2626"}}>{brl(l)}</td>
+                <td style={TD}><MargBadge marg={mg2}/></td>
+                <td style={TD}><Badge status={p.status}/></td>
+              </HRow>;
+            })}</tbody>
+          </table></div>
+        )}
+      </Section>
+
+      {/* Despesas manuais */}
+      <Section title="🧾 Despesas Manuais">
+        {despesas.length===0?<Empty msg="Nenhuma despesa neste período." icon="🧾"/>:(
           <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}>
             <thead><tr>{["Data","Categoria","Descrição","Valor",""].map(h=><th key={h} style={TH}>{h}</th>)}</tr></thead>
             <tbody>{[...despesas].reverse().map(c=>(
               <HRow key={c.id}>
-                <td style={{...TD,color:"#9ca3af"}}>{c.data}</td>
+                <td style={{...TD,color:"#9ca3af"}}>{fmtData(c.data)}</td>
                 <td style={TD}><span style={{background:"#f3f4f6",color:"#374151",padding:"2px 10px",borderRadius:20,fontSize:11,fontWeight:700}}>{c.categoria}</span></td>
                 <td style={{...TD,fontWeight:600,color:"#111"}}>{c.descricao}</td>
-                <td style={{...TD,fontWeight:700,color:"#dc2626"}}>{brl(c.valor)}</td>
-                <td style={TD}><Btn v="danger" onClick={()=>delD(c.id)}>🗑</Btn></td>
+                <td style={{...TD,fontWeight:700,color:"#dc2626"}}>- {brl(c.valor)}</td>
+                <td style={TD}><button onClick={()=>delD(c.id)} style={{width:32,height:32,borderRadius:7,border:"1px solid #fecaca",background:"#fef2f2",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:"#dc2626"}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg></button></td>
               </HRow>
             ))}</tbody>
           </table></div>
         )}
       </Section>
+
       {modalD&&<Modal title="Nova Despesa" onClose={()=>setModalD(false)}>
         <div style={{display:"flex",flexWrap:"wrap",gap:12}}>
           <Field label="Data" half><Inp type="date" value={fd.data} onChange={e=>setFd(p=>({...p,data:e.target.value}))}/></Field>
           <Field label="Categoria" half><Sel value={fd.categoria} onChange={e=>setFd(p=>({...p,categoria:e.target.value}))}>{CATS_DESP.map(c=><option key={c}>{c}</option>)}</Sel></Field>
-          <Field label="Descrição"><Inp value={fd.descricao} onChange={e=>setFd(p=>({...p,descricao:e.target.value}))} placeholder="ex: 21 unid. Bahia..." autoFocus/></Field>
+          <Field label="Descrição"><Inp value={fd.descricao} onChange={e=>setFd(p=>({...p,descricao:e.target.value}))} placeholder="ex: Frete 10 camisas Bahia..." autoFocus/></Field>
           <Field label="Valor (R$)"><Inp type="number" min="0" step="0.01" value={fd.valor} onChange={e=>setFd(p=>({...p,valor:parseFloat(e.target.value)||0}))}/></Field>
         </div>
         <MBtns onClose={()=>setModalD(false)} onSave={salvD}/>
@@ -1014,60 +1077,160 @@ function PageCusto({db,setDb}){
 
 // ── CAIXA ────────────────────────────────────────────────────
 function PageCaixa({db,setDb}){
-  const [filtro,setFiltro]=useState("mes");const [modal,setModal]=useState(false);
+  const [filtro,setFiltro]=useState("mes");
+  const [modalTipo,setModalTipo]=useState(null); // "Entrada" ou "Saída"
   const [f,setF]=useState({data:hoje(),tipo:"Entrada",descricao:"",valor:0,categoria:"Venda"});
   const m=mesAtual();const hj=hoje();const sw=semIni();const mp=mesPrev();
   const FILTROS=[{k:"hoje",l:"Hoje"},{k:"semana",l:"Esta semana"},{k:"mes",l:"Este mês"},{k:"mes_ant",l:"Mês passado"},{k:"todos",l:"Todos"}];
-  const fd2=c=>{const d=c.data||"";if(filtro==="hoje")return d===hj;if(filtro==="semana")return d>=sw;if(filtro==="mes_ant")return d.startsWith(mp);if(filtro==="todos")return true;return d.startsWith(m);};
-  const itens=db.caixa.filter(fd2);
-  const ent=itens.filter(c=>c.tipo==="Entrada").reduce((a,c)=>a+(c.valor||0),0);
-  const sai=itens.filter(c=>c.tipo==="Saída").reduce((a,c)=>a+(c.valor||0),0);
-  const saldo=r(ent-sai);
-  const salv=()=>{if(!f.descricao.trim())return alert("Informe a descrição.");if(!f.valor||f.valor<=0)return alert("Informe o valor.");setDb(prev=>{const id=prev.nextId+1;return{...prev,nextId:id,caixa:[...prev.caixa,{...f,id}]};});setF({data:hoje(),tipo:"Entrada",descricao:"",valor:0,categoria:"Venda"});setModal(false);};
+  const fd2=x=>{const d=x.data||"";if(filtro==="hoje")return d===hj;if(filtro==="semana")return d>=sw;if(filtro==="mes_ant")return d.startsWith(mp);if(filtro==="todos")return true;return d.startsWith(m);};
+
+  // ✅ Entradas automáticas: valor recebido dos pedidos de venda no período
+  const pedsRecebidos=db.pedidos.filter(p=>fd2(p)&&!isEstoque(p)&&(p.valorRecebido||0)>0);
+  const entAutomatic=r(pedsRecebidos.reduce((a,p)=>a+(p.valorRecebido||0),0));
+
+  // Entradas manuais (ex: venda extra, reembolso)
+  const entManual=db.caixa.filter(c=>c.tipo==="Entrada"&&fd2(c));
+  const totEntManual=r(entManual.reduce((a,c)=>a+(c.valor||0),0));
+
+  // Saídas (despesas: frete, taxa, etc.)
+  const saidas=db.caixa.filter(c=>c.tipo==="Saída"&&fd2(c));
+  const totSaidas=r(saidas.reduce((a,c)=>a+(c.valor||0),0));
+
+  const totalEntradas=r(entAutomatic+totEntManual);
+  const saldo=r(totalEntradas-totSaidas);
+
+  const abrirModal=(tipo)=>{
+    setF({data:hoje(),tipo,descricao:"",valor:0,
+      categoria:tipo==="Entrada"?"Venda extra":"Produto / Estoque"});
+    setModalTipo(tipo);
+  };
+
+  const salv=()=>{
+    if(!f.descricao.trim())return alert("Informe a descrição.");
+    if(!f.valor||f.valor<=0)return alert("Informe o valor.");
+    setDb(prev=>{const id=prev.nextId+1;return{...prev,nextId:id,caixa:[...prev.caixa,{...f,id}]};});
+    setModalTipo(null);
+  };
   const del=id=>{if(!window.confirm("Excluir?"))return;setDb(prev=>({...prev,caixa:prev.caixa.filter(c=>c.id!==id)}));};
+
   return(
     <div>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16}}>
-        <div><div style={{fontSize:22,fontWeight:800,color:"#111"}}>Caixa</div><div style={{fontSize:13,color:"#9ca3af"}}>Entradas, saídas e saldo</div></div>
-        <Btn onClick={()=>setModal(true)}>+ Receita</Btn>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+        <div style={{fontSize:22,fontWeight:800,color:"#111"}}>Caixa</div>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={()=>abrirModal("Entrada")} style={{display:"flex",alignItems:"center",
+            gap:7,padding:"9px 16px",borderRadius:9,border:"2px solid #16a34a",background:"#f0fdf4",
+            color:"#16a34a",fontWeight:700,fontSize:13,cursor:"pointer"}}>
+            💵 + Entrada
+          </button>
+          <button onClick={()=>abrirModal("Saída")} style={{display:"flex",alignItems:"center",
+            gap:7,padding:"9px 16px",borderRadius:9,border:"2px solid #dc2626",background:"#fef2f2",
+            color:"#dc2626",fontWeight:700,fontSize:13,cursor:"pointer"}}>
+            🧾 + Despesa
+          </button>
+        </div>
       </div>
       <div style={{marginBottom:16}}><Tabs options={FILTROS} value={filtro} onChange={setFiltro}/></div>
+
+      {/* Aviso explicativo */}
+      <Alert type="info">
+        💡 As <strong>entradas de vendas</strong> entram automaticamente quando você preenche o <strong>Valor Recebido</strong> em um pedido. Use <strong>+ Entrada</strong> só para recebimentos extras (reembolso, outros). Use <strong>+ Despesa</strong> para taxas, fretes e custos avulsos.
+      </Alert>
+
+      {/* KPIs */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:14,marginBottom:16}}>
-        <HCard color="#16a34a"><div style={{fontSize:11,color:"#9ca3af",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:6}}>ENTRADAS</div><div style={{fontSize:22,fontWeight:800,color:"#16a34a"}}>{brl(ent)}</div><div style={{fontSize:11,color:"#9ca3af",marginTop:4}}>Saques + Extras</div></HCard>
-        <HCard color="#dc2626"><div style={{fontSize:11,color:"#9ca3af",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:6}}>SAÍDAS (DESPESAS)</div><div style={{fontSize:22,fontWeight:800,color:"#dc2626"}}>{brl(sai)}</div><div style={{fontSize:11,color:"#9ca3af",marginTop:4}}>Total de despesas</div></HCard>
-        <HCard color={saldo>=0?"#16a34a":"#dc2626"}><div style={{fontSize:11,color:"#9ca3af",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:6}}>SALDO EM CAIXA</div><div style={{fontSize:22,fontWeight:800,color:saldo>=0?"#16a34a":"#dc2626"}}>{brl(saldo)}</div><div style={{fontSize:11,color:"#9ca3af",marginTop:4}}>Entradas – Despesas</div></HCard>
+        <HCard color="#16a34a">
+          <div style={{fontSize:11,color:"#9ca3af",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:6}}>💵 ENTRADAS</div>
+          <div style={{fontSize:22,fontWeight:800,color:"#16a34a"}}>{brl(totalEntradas)}</div>
+          <div style={{fontSize:11,color:"#9ca3af",marginTop:4}}>
+            Vendas: {brl(entAutomatic)}{totEntManual>0?` · Extra: ${brl(totEntManual)}`:""}
+          </div>
+        </HCard>
+        <HCard color="#dc2626">
+          <div style={{fontSize:11,color:"#9ca3af",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:6}}>🧾 SAÍDAS / DESPESAS</div>
+          <div style={{fontSize:22,fontWeight:800,color:"#dc2626"}}>{brl(totSaidas)}</div>
+          <div style={{fontSize:11,color:"#9ca3af",marginTop:4}}>Taxas, fretes e outros custos</div>
+        </HCard>
+        <HCard color={saldo>=0?"#16a34a":"#dc2626"}>
+          <div style={{fontSize:11,color:"#9ca3af",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:6}}>🏦 SALDO DO PERÍODO</div>
+          <div style={{fontSize:22,fontWeight:800,color:saldo>=0?"#16a34a":"#dc2626"}}>{brl(saldo)}</div>
+          <div style={{fontSize:11,color:"#9ca3af",marginTop:4}}>Entradas – Despesas</div>
+        </HCard>
       </div>
-      <Section title="Movimentações">
-        {itens.length===0?<Empty msg="Nenhum lançamento neste período." icon="💳"/>:(
-          <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}>
-            <thead><tr>{["Data","Descrição","Tipo","Valor",""].map(h=><th key={h} style={TH}>{h}</th>)}</tr></thead>
-            <tbody>{[...itens].reverse().map(c=>(
-              <HRow key={c.id}>
-                <td style={{...TD,color:"#9ca3af"}}>{c.data}</td>
-                <td style={{...TD,fontWeight:600,color:"#111"}}>{c.descricao}</td>
-                <td style={TD}><span style={{background:c.tipo==="Entrada"?"#f0fdf4":"#fef2f2",color:c.tipo==="Entrada"?"#16a34a":"#dc2626",border:`1px solid ${c.tipo==="Entrada"?"#bbf7d0":"#fecaca"}`,padding:"2px 10px",borderRadius:20,fontSize:11,fontWeight:700}}>{c.categoria||c.tipo}</span></td>
-                <td style={{...TD,fontWeight:700,color:c.tipo==="Entrada"?"#16a34a":"#dc2626"}}>{c.tipo==="Entrada"?"+ ":"- "}{brl(c.valor)}</td>
-                <td style={TD}><Btn v="danger" onClick={()=>del(c.id)}>🗑</Btn></td>
+
+      {/* Recebimentos automáticos das vendas */}
+      <Section title="✅ Recebimentos de Vendas (automático)">
+        {pedsRecebidos.length===0
+          ?<Empty msg="Nenhum recebimento de venda neste período. Marque 'Valor Recebido' nos pedidos." icon="💵"/>
+          :<div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}>
+            <thead><tr>{["Data","Cliente","Camisa","Valor Recebido"].map(h=><th key={h} style={TH}>{h}</th>)}</tr></thead>
+            <tbody>{[...pedsRecebidos].reverse().map(p=>(
+              <HRow key={p.id}>
+                <td style={{...TD,color:"#9ca3af"}}>{fmtData(p.data)}</td>
+                <td style={{...TD,fontWeight:700}}>{p.cliente}</td>
+                <td style={TD}>{p.time||p.camisa}{p.ano?` ${p.ano}`:""} {p.tamanho}</td>
+                <td style={{...TD,fontWeight:800,color:"#16a34a",fontSize:15}}>+ {brl(p.valorRecebido||0)}</td>
               </HRow>
             ))}</tbody>
           </table></div>
-        )}
+        }
       </Section>
-      {modal&&<Modal title="Novo Lançamento" onClose={()=>setModal(false)}>
-        <div style={{display:"flex",flexWrap:"wrap",gap:12}}>
-          <Field label="Data" half><Inp type="date" value={f.data} onChange={e=>setF(p=>({...p,data:e.target.value}))}/></Field>
-          <Field label="Tipo" half><Sel value={f.tipo} onChange={e=>setF(p=>({...p,tipo:e.target.value}))}><option>Entrada</option><option>Saída</option></Sel></Field>
-          <Field label="Descrição"><Inp value={f.descricao} onChange={e=>setF(p=>({...p,descricao:e.target.value}))} placeholder="ex: Venda camisa Bahia..." autoFocus/></Field>
-          <Field label="Categoria" half>
-            <Sel value={f.categoria} onChange={e=>setF(p=>({...p,categoria:e.target.value}))}>
-              <optgroup label="Entradas">{CATS_REC.map(c=><option key={c}>{c}</option>)}</optgroup>
-              <optgroup label="Saídas">{CATS_DESP.map(c=><option key={c}>{c}</option>)}</optgroup>
-            </Sel>
-          </Field>
-          <Field label="Valor (R$)" half><Inp type="number" min="0" step="0.01" value={f.valor} onChange={e=>setF(p=>({...p,valor:parseFloat(e.target.value)||0}))}/></Field>
-        </div>
-        <MBtns onClose={()=>setModal(false)} onSave={salv}/>
-      </Modal>}
+
+      {/* Despesas e entradas extras manuais */}
+      <Section title="📒 Lançamentos Manuais">
+        {(entManual.length+saidas.length)===0
+          ?<Empty msg="Nenhum lançamento manual neste período." icon="📒"/>
+          :<div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}>
+            <thead><tr>{["Data","Descrição","Categoria","Valor",""].map(h=><th key={h} style={TH}>{h}</th>)}</tr></thead>
+            <tbody>{[...db.caixa.filter(c=>fd2(c))].reverse().map(c=>(
+              <HRow key={c.id}>
+                <td style={{...TD,color:"#9ca3af"}}>{fmtData(c.data)}</td>
+                <td style={{...TD,fontWeight:600,color:"#111"}}>{c.descricao}</td>
+                <td style={TD}>
+                  <span style={{background:c.tipo==="Entrada"?"#f0fdf4":"#fef2f2",
+                    color:c.tipo==="Entrada"?"#16a34a":"#dc2626",
+                    border:`1px solid ${c.tipo==="Entrada"?"#bbf7d0":"#fecaca"}`,
+                    padding:"2px 10px",borderRadius:20,fontSize:11,fontWeight:700}}>
+                    {c.categoria||c.tipo}
+                  </span>
+                </td>
+                <td style={{...TD,fontWeight:700,color:c.tipo==="Entrada"?"#16a34a":"#dc2626"}}>
+                  {c.tipo==="Entrada"?"+ ":"- "}{brl(c.valor)}
+                </td>
+                <td style={TD}>
+                  <button onClick={()=>del(c.id)} style={{width:32,height:32,borderRadius:7,
+                    border:"1px solid #fecaca",background:"#fef2f2",cursor:"pointer",
+                    display:"flex",alignItems:"center",justifyContent:"center",color:"#dc2626"}}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+                  </button>
+                </td>
+              </HRow>
+            ))}</tbody>
+          </table></div>
+        }
+      </Section>
+
+      {modalTipo&&(
+        <Modal title={modalTipo==="Entrada"?"💵 Nova Entrada Extra":"🧾 Nova Despesa"} onClose={()=>setModalTipo(null)}>
+          <Alert type={modalTipo==="Entrada"?"success":"error"}>
+            {modalTipo==="Entrada"
+              ?"Use para recebimentos que não são vendas cadastradas (ex: reembolso, venda avulsa)."
+              :"Registre aqui custos como frete, taxa, embalagem, ferramentas, etc."}
+          </Alert>
+          <div style={{display:"flex",flexWrap:"wrap",gap:12,marginTop:12}}>
+            <Field label="Data" half><Inp type="date" value={f.data} onChange={e=>setF(p=>({...p,data:e.target.value}))}/></Field>
+            <Field label="Categoria" half>
+              <Sel value={f.categoria} onChange={e=>setF(p=>({...p,categoria:e.target.value}))}>
+                {(modalTipo==="Entrada"?CATS_REC:CATS_DESP).map(c=><option key={c}>{c}</option>)}
+              </Sel>
+            </Field>
+            <Field label="Descrição"><Inp value={f.descricao} onChange={e=>setF(p=>({...p,descricao:e.target.value}))} placeholder={modalTipo==="Entrada"?"ex: Reembolso, venda extra...":"ex: Frete 4 camisas Vitória..."} autoFocus/></Field>
+            <Field label="Valor (R$)"><Inp type="number" min="0" step="0.01" value={f.valor} onChange={e=>setF(p=>({...p,valor:parseFloat(e.target.value)||0}))}/></Field>
+          </div>
+          <MBtns onClose={()=>setModalTipo(null)} onSave={salv}
+            label={modalTipo==="Entrada"?"Registrar Entrada":"Registrar Despesa"}/>
+        </Modal>
+      )}
     </div>
   );
 }
