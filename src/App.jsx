@@ -753,6 +753,59 @@ function PageEstoque({db,onAdd,onEdit,onDelete}){
   );
 }
 
+// Seção colapsável de pedidos para estoque (Opção B)
+function EstoqueColapsavel({pedidos,onEdit,onDelete}){
+  const [aberto,setAberto]=useState(false);
+  const [h,setH]=useState(false);
+  return(
+    <div style={{background:"#fff",border:"1px solid #e5e7eb",borderRadius:12,marginBottom:16,overflow:"hidden"}}>
+      <div onClick={()=>setAberto(a=>!a)} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)}
+        style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 20px",
+          cursor:"pointer",background:h?"#f9fafb":"#fff",transition:"background 0.15s",
+          borderBottom:aberto?"1px solid #e5e7eb":"none"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <span style={{fontSize:16}}>📦</span>
+          <span style={{fontWeight:700,fontSize:14,color:"#374151"}}>Pedidos para Estoque</span>
+          <span style={{background:"#ecfdf5",color:"#065f46",border:"1px solid #6ee7b7",
+            padding:"2px 10px",borderRadius:20,fontSize:12,fontWeight:700}}>{pedidos.length}</span>
+        </div>
+        <span style={{fontSize:18,color:"#9ca3af",transition:"transform 0.2s",
+          transform:aberto?"rotate(180deg)":"none"}}>⌄</span>
+      </div>
+      {aberto&&(
+        <div style={{overflowX:"auto",padding:"0 0 4px"}}>
+          <table style={{width:"100%",borderCollapse:"collapse"}}>
+            <thead><tr>{["Data","ID","Camisa","Tamanho","Custo","Status",""].map(h=><th key={h} style={TH}>{h}</th>)}</tr></thead>
+            <tbody>
+              {pedidos.map(p=>{
+                const c=r(((p.custoProduto||0)+(p.custoTaxa||0))*(p.qtd||1));
+                return(
+                  <HRow key={p.id}>
+                    <td style={{...TD,color:"#9ca3af"}}>{fmtData(p.data)}</td>
+                    <td style={{...TD,color:"#9ca3af",fontSize:12}}>#{p.id}</td>
+                    <td style={TD}><div style={{fontWeight:600,color:"#374151"}}>{p.time||p.camisa}{p.ano&&` ${p.ano}`}</div></td>
+                    <td style={TD}>{p.tamanho}</td>
+                    <td style={TD}>{brl(c)}</td>
+                    <td style={TD}><Badge status={p.status}/></td>
+                    <td style={TD}><div style={{display:"flex",gap:5}}>
+                      <button onClick={()=>onEdit(p)} title="Editar" style={{width:32,height:32,borderRadius:7,border:"1px solid #e5e7eb",background:"#f9fafb",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:"#374151"}}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>
+                      </button>
+                      <button onClick={()=>onDelete(p.id)} title="Excluir" style={{width:32,height:32,borderRadius:7,border:"1px solid #fecaca",background:"#fef2f2",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:"#dc2626"}}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+                      </button>
+                    </div></td>
+                  </HRow>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── PEDIDOS ──────────────────────────────────────────────────
 function PagePedidos({db,onAdd,onEdit,onDelete,onUpdateMeta,statusInicial}){
   const [filtro,setFiltro]=useState("mes");const [busca,setBusca]=useState("");
@@ -784,19 +837,32 @@ function PagePedidos({db,onAdd,onEdit,onDelete,onUpdateMeta,statusInicial}){
   },[statusInicial]);
 
   const filtrados=db.pedidos.filter(p=>{
-    // Filtro de período: mês específico tem prioridade
     let mf;
-    if(mesFiltro){
-      mf=p.data?.startsWith(mesFiltro);
-    }else{
-      mf=filtro==="todos"?true:filtro==="hoje"?p.data===hj:filtro==="semana"?p.data>=sw:filtro==="mes_ant"?p.data?.startsWith(mp):p.data?.startsWith(m);
-    }
-    // Filtro de status (suporta __atrasados__)
+    if(mesFiltro){mf=p.data?.startsWith(mesFiltro);}
+    else{mf=filtro==="todos"?true:filtro==="hoje"?p.data===hj:filtro==="semana"?p.data>=sw:filtro==="mes_ant"?p.data?.startsWith(mp):p.data?.startsWith(m);}
     const sf=statusFiltro==="todos"?true:statusFiltro==="__atrasados__"?isAtrasado(p):statusFiltro==="__estoque__"?isEstoque(p):p.status===statusFiltro;
     return mf&&sf&&(!busca||p.cliente?.toLowerCase().includes(busca.toLowerCase())||p.time?.toLowerCase().includes(busca.toLowerCase())||p.camisa?.toLowerCase().includes(busca.toLowerCase()));
   });
-  // KPIs acompanham o filtro de mês selecionado (mesFiltro) ou mês atual (m)
-  const mesKPI = mesFiltro || m;
+
+  // Separar vendas de estoque
+  const filtradosVendas=filtrados.filter(p=>!isEstoque(p));
+  const filtradosEstoque=filtrados.filter(p=>isEstoque(p));
+
+  // Ordenar por prioridade:
+  // 1. A Fazer (produzir) | 2. Atrasado | 3. Em Transporte | 4. Pedido Feito
+  // 5. Entregue com saldo pendente (cobrar) | 6. Concluído (entregue + pago)
+  const prioridade=(p)=>{
+    if(p.status==="A Fazer"&&isAtrasado(p))return 1;
+    if(p.status==="A Fazer")return 2;
+    if(p.status==="Em Transporte")return 3;
+    if(p.status==="Pedido Feito")return 4;
+    const sb=r((p.precoVenda||0)-(p.valorRecebido||0));
+    if(p.status==="Entregue"&&sb>0)return 5;
+    return 6; // concluído
+  };
+  const vendaOrdenada=[...filtradosVendas].sort((a,b)=>prioridade(a)-prioridade(b));
+
+  const mesKPI=mesFiltro||m;
   const pm=db.pedidos.filter(p=>p.data?.startsWith(mesKPI)&&!isEstoque(p));
   const fat=pm.reduce((a,p)=>a+(p.precoVenda||0)*(p.qtd||1),0);
   const cus=pm.reduce((a,p)=>a+((p.custoProduto||0)+(p.custoTaxa||0))*(p.qtd||1),0);
@@ -865,42 +931,46 @@ function PagePedidos({db,onAdd,onEdit,onDelete,onUpdateMeta,statusInicial}){
           <Inp value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Buscar..." style={{...INP,width:160}}/>
         </div>
       }>
-        <div style={{fontWeight:800,fontSize:15,color:"#111",marginBottom:14}}>Pedidos</div>
-        {filtrados.length===0?<Empty msg="Nenhum pedido encontrado." icon="🛒"/>:(
+        <div style={{fontWeight:800,fontSize:15,color:"#111",marginBottom:14}}>
+          Pedidos {vendaOrdenada.length>0&&<span style={{color:"#9ca3af",fontWeight:400,fontSize:13}}>({vendaOrdenada.length})</span>}
+        </div>
+        {vendaOrdenada.length===0?<Empty msg="Nenhum pedido encontrado." icon="🛒"/>:(
           <div style={{overflowX:"auto"}}>
             <table style={{width:"100%",borderCollapse:"collapse"}}>
               <thead><tr>{["Data","ID","Produto","QTD","Valor","Custo/Taxa","Lucro","Status",""].map(h=><th key={h} style={TH}>{h}</th>)}</tr></thead>
               <tbody>
-                {[...filtrados].reverse().map(p=>{
+                {vendaOrdenada.map(p=>{
                   const v=r((p.precoVenda||0)*(p.qtd||1));const c=r(((p.custoProduto||0)+(p.custoTaxa||0))*(p.qtd||1));
                   const l=r(v-c);const mg=v>0?r((l/v)*100):0;const sb=r(v-(p.valorRecebido||0));
+                  const concluido=p.status==="Entregue"&&sb<=0;
                   return(
-                    <HRow key={p.id}>
+                    <HRow key={p.id} style={concluido?{opacity:0.55,background:"#fafafa"}:{}}>
                       <td style={{...TD,color:"#9ca3af"}}>{fmtData(p.data)}</td>
                       <td style={{...TD,color:"#6b7280",fontSize:12}}>#{p.id}</td>
                       <td style={TD}>
-                        <div style={{fontWeight:700,color:"#111",fontSize:13}}>
+                        <div style={{fontWeight:700,color:concluido?"#9ca3af":"#111",fontSize:14,display:"flex",alignItems:"center",gap:6}}>
+                          {concluido&&<span style={{color:"#16a34a",fontSize:13}}>✓</span>}
                           {p.time||p.camisa}{p.ano&&` ${p.ano}`}
-                          {p.tamanho&&<span style={{color:"#6b7280",fontWeight:500}}> · {p.tamanho}</span>}
-                          {p.cor&&<span style={{color:"#9ca3af",fontWeight:400,fontSize:12}}> · {p.cor}</span>}
+                          {p.tamanho&&<span style={{color:"#6b7280",fontWeight:500,fontSize:13}}> · {p.tamanho}</span>}
                         </div>
-                        <div style={{fontSize:11,color:"#9ca3af",marginTop:3,display:"flex",flexWrap:"wrap",alignItems:"center",gap:4}}>
-                          {p.cliente&&!isEstoque(p)&&<span style={{color:"#374151",fontWeight:600}}>{p.cliente}</span>}
-                          {p.telefone&&<span>· 📞 {p.telefone}</span>}
+                        <div style={{fontSize:12,color:"#6b7280",marginTop:3,display:"flex",flexWrap:"wrap",alignItems:"center",gap:5}}>
+                          <span style={{color:"#111",fontWeight:700,fontSize:13}}>{p.cliente}</span>
+                          {p.telefone&&<span style={{color:"#9ca3af"}}>· 📞 {p.telefone}</span>}
                           {p.captacao&&<span style={{color:"#7c3aed",fontWeight:500}}>· {p.captacao}</span>}
-                          {sb>0&&!isEstoque(p)&&<span style={{color:"#dc2626",fontWeight:700}}>· Receber {brl(sb)}</span>}
+                          {sb>0&&<span style={{color:"#dc2626",fontWeight:700}}>· Receber {brl(sb)}</span>}
+                          {concluido&&<span style={{color:"#16a34a",fontWeight:600}}>· Concluído</span>}
                         </div>
                       </td>
                       <td style={{...TD,textAlign:"center"}}>{p.qtd||1}</td>
                       <td style={{...TD,fontWeight:700}}>{brl(v)}</td>
                       <td style={TD}>{brl(c)} <MargBadge marg={mg}/></td>
                       <td style={{...TD,fontWeight:700,color:l>=0?"#16a34a":"#dc2626"}}>{brl(l)}</td>
-                      <td style={TD}><Badge status={isAtrasado(p)?"Atrasado":p.status} estoque={isEstoque(p)}/></td>
+                      <td style={TD}><Badge status={isAtrasado(p)?"Atrasado":p.status}/></td>
                       <td style={TD}><div style={{display:"flex",gap:5}}>
-                        <button onClick={()=>onEdit(p)} title="Editar" style={{width:32,height:32,borderRadius:7,border:"1px solid #e5e7eb",background:"#f9fafb",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:"#374151",transition:"all 0.15s"}}>
+                        <button onClick={()=>onEdit(p)} title="Editar" style={{width:32,height:32,borderRadius:7,border:"1px solid #e5e7eb",background:"#f9fafb",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:"#374151"}}>
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>
                         </button>
-                        <button onClick={()=>onDelete(p.id)} title="Excluir" style={{width:32,height:32,borderRadius:7,border:"1px solid #fecaca",background:"#fef2f2",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:"#dc2626",transition:"all 0.15s"}}>
+                        <button onClick={()=>onDelete(p.id)} title="Excluir" style={{width:32,height:32,borderRadius:7,border:"1px solid #fecaca",background:"#fef2f2",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:"#dc2626"}}>
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
                         </button>
                       </div></td>
@@ -912,6 +982,11 @@ function PagePedidos({db,onAdd,onEdit,onDelete,onUpdateMeta,statusInicial}){
           </div>
         )}
       </Section>
+
+      {/* Seção colapsável de pedidos para estoque — Opção B */}
+      {filtradosEstoque.length>0&&(
+        <EstoqueColapsavel pedidos={filtradosEstoque} onEdit={onEdit} onDelete={onDelete}/>
+      )}
       {mm&&<Modal title="Editar Meta Mensal" onClose={()=>setMm(false)}>
         <div style={{display:"flex",flexWrap:"wrap",gap:12}}>
           <Field label="Meta de Pedidos"><Inp type="number" min="0" value={mt.pedidos} onChange={e=>setMt(m=>({...m,pedidos:parseInt(e.target.value)||0}))}/></Field>
