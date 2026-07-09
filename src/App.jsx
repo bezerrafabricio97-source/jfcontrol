@@ -143,6 +143,13 @@ const TH={textAlign:"left",padding:"9px 14px",fontSize:11,color:"#6b7280",fontWe
   whiteSpace:"nowrap",background:"#fafafa"};
 const TD={padding:"11px 14px",borderBottom:"1px solid #f5f5f5",fontSize:13,
   color:"#374151",verticalAlign:"middle"};
+// Variantes compactas — usadas em tabelas mais densas (ex: prévia de pedidos do Dashboard),
+// pra caber mais colunas sem precisar de rolagem lateral
+const TDSM_TH={textAlign:"left",padding:"8px 10px",fontSize:10.5,color:"#6b7280",fontWeight:700,
+  textTransform:"uppercase",letterSpacing:"0.4px",borderBottom:"1px solid #e5e7eb",
+  whiteSpace:"nowrap",background:"#fafafa"};
+const TDSM={padding:"9px 10px",borderBottom:"1px solid #f5f5f5",fontSize:12.5,
+  color:"#374151",verticalAlign:"middle"};
 
 function Inp(p){return <input style={INP} {...p}/>;}
 function Sel({children,...p}){return <select style={INP} {...p}>{children}</select>;}
@@ -537,38 +544,39 @@ function PageDashboard({db,setDb,onNavigate}){
       {/* Pedidos do mês — aparece ANTES dos KPIs mensais */}
       <Section title={`🕐 Pedidos de ${nomeMesSel}`}>
         {pm.length===0?<Empty msg="Nenhum pedido neste mês." icon="🛒"/>:(
-          <div style={{overflowX:"auto"}}>
-            <table style={{width:"100%",borderCollapse:"collapse"}}>
-              <thead><tr>{["Data","Cliente","Camisa","Tam.","Custo","Taxa","Vendido","Recebido","A Receber","Lucro","Margem","Status"].map(h=><th key={h} style={h==="A Receber"?{...TH,color:"#dc2626"}:TH}>{h}</th>)}</tr></thead>
+          <div style={{width:"100%"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",tableLayout:"fixed"}}>
+              <colgroup>
+                <col style={{width:"9%"}}/><col style={{width:"16%"}}/><col style={{width:"27%"}}/>
+                <col style={{width:"12%"}}/><col style={{width:"12%"}}/><col style={{width:"12%"}}/>
+                <col style={{width:"12%"}}/>
+              </colgroup>
+              <thead><tr>{["Data","Cliente","Camisa","Custo","Vendido","A Receber","Lucro"].map(h=>
+                <th key={h} style={h==="A Receber"?{...TDSM_TH,color:"#dc2626"}:TDSM_TH}>{h}</th>)}
+                <th style={{...TDSM_TH,textAlign:"center"}}>Status</th></tr></thead>
               <tbody>
                 {[...pm].reverse().map(p=>{
                   const v=r((p.precoVenda||0)*(p.qtd||1));
-                  const custo=r((p.custoProduto||0)*(p.qtd||1));
-                  const taxa=r((p.custoTaxa||0)*(p.qtd||1));
-                  const lucro=r(v-custo-taxa);
-                  const margem=v>0?r((lucro/v)*100):0;
+                  const custo=r(((p.custoProduto||0)+(p.custoTaxa||0))*(p.qtd||1));
+                  const lucro=r(v-custo);
                   const sb=r(v-(p.valorRecebido||0));
                   return(
                     <HRow key={p.id}>
-                      <td style={{...TD,color:"#9ca3af"}}>{fmtData(p.data)}</td>
-                      <td style={{...TD,fontWeight:700,color:"#111"}}>{p.cliente}</td>
-                      <td style={TD}>{p.time||p.camisa}{p.ano&&` ${p.ano}`} {p.uniforme&&`(${p.uniforme})`}</td>
-                      <td style={TD}>{p.tamanho}</td>
-                      <td style={{...TD,color:"#dc2626"}}>{brl(custo)}</td>
-                      <td style={{...TD,color:"#dc2626"}}>{brl(taxa)}</td>
-                      <td style={{...TD,fontWeight:700}}>{brl(v)}</td>
-                      <td style={TD}>
-                        <div style={{fontWeight:700,color:"#16a34a"}}>{brl(p.valorRecebido||0)}</div>
+                      <td style={{...TDSM,color:"#9ca3af",whiteSpace:"nowrap"}}>{fmtData(p.data)}</td>
+                      <td style={{...TDSM,fontWeight:700,color:"#111",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.cliente}</td>
+                      <td style={{...TDSM,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                        {p.time||p.camisa}{p.ano&&` ${p.ano}`} {p.uniforme&&`(${p.uniforme})`} · {p.tamanho}
                       </td>
-                      <td style={TD}>
+                      <td style={{...TDSM,color:"#dc2626",whiteSpace:"nowrap"}}>{brl(custo)}</td>
+                      <td style={{...TDSM,fontWeight:700,whiteSpace:"nowrap"}}>{brl(v)}</td>
+                      <td style={{...TDSM,whiteSpace:"nowrap"}}>
                         {sb>0
-                          ?<div style={{fontWeight:800,color:"#dc2626",fontSize:13}}>{brl(sb)}</div>
-                          :<div style={{color:"#16a34a",fontSize:12,fontWeight:700}}>✓ Pago</div>
+                          ?<span style={{fontWeight:800,color:"#dc2626"}}>{brl(sb)}</span>
+                          :<span style={{color:"#16a34a",fontWeight:700}}>✓ Pago</span>
                         }
                       </td>
-                      <td style={{...TD,fontWeight:700,color:lucro>=0?"#16a34a":"#dc2626"}}>{brl(lucro)}</td>
-                      <td style={{...TD,fontWeight:700,color:margem>=0?"#16a34a":"#dc2626"}}>{margem.toFixed(0)}%</td>
-                      <td style={TD}><Badge status={p.status} estoque={isEstoque(p)}/></td>
+                      <td style={{...TDSM,fontWeight:700,color:lucro>=0?"#16a34a":"#dc2626",whiteSpace:"nowrap"}}>{brl(lucro)}</td>
+                      <td style={{...TDSM,textAlign:"center"}}><Badge status={p.status} estoque={isEstoque(p)}/></td>
                     </HRow>
                   );
                 })}
@@ -1626,17 +1634,18 @@ function MenuItem({item,active,onClick,escuro}){
   const txt = active ? "#fff" : "#c4c1cc";
   return(
     <div onClick={onClick} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)}
-      style={{display:"flex",alignItems:"center",gap:11,padding:"7px 16px",cursor:"pointer",
-        borderRadius:8,margin:"1px 10px",background:bg,transition:"all 0.15s"}}>
+      style={{display:"flex",alignItems:"center",gap:9,padding:"7px 12px",cursor:"pointer",
+        borderRadius:8,margin:"1px 8px",background:bg,transition:"all 0.15s"}}>
       <MenuIco k={item.ico} active={active}/>
-      <span style={{fontSize:13,fontWeight:active?700:500,color:txt}}>{item.l}</span>
+      <span style={{fontSize:12.5,fontWeight:active?700:500,color:txt,whiteSpace:"nowrap",
+        overflow:"hidden",textOverflow:"ellipsis"}}>{item.l}</span>
     </div>
   );
 }
 
 function MenuLabel({children}){
-  return<div style={{fontSize:10,fontWeight:800,color:"#6b6877",textTransform:"uppercase",
-    letterSpacing:"0.8px",padding:"9px 20px 4px"}}>{children}</div>;
+  return<div style={{fontSize:9.5,fontWeight:800,color:"#6b6877",textTransform:"uppercase",
+    letterSpacing:"0.6px",padding:"9px 14px 4px"}}>{children}</div>;
 }
 
 function Sidebar({page,setPage,onLogout,open,onCloseMobile,escuro,setEscuro}){
@@ -1645,17 +1654,17 @@ function Sidebar({page,setPage,onLogout,open,onCloseMobile,escuro,setEscuro}){
   // A barra lateral é sempre escura — identidade fixa do app, não depende do
   // Modo Escuro (que afeta só o conteúdo da direita).
   return(
-    <div style={{width:200,minWidth:200,background:"#13111a",borderRight:"1px solid #24212e",
+    <div style={{width:172,minWidth:172,background:"#13111a",borderRight:"1px solid #24212e",
       display:"flex",flexDirection:"column",height:"100vh",flexShrink:0,overflowY:"auto"}}>
-      <div style={{padding:"16px 16px 14px",borderBottom:"1px solid #24212e"}}>
-        <div style={{display:"flex",alignItems:"center",gap:10}}>
-          <div style={{width:36,height:36,borderRadius:10,display:"flex",
+      <div style={{padding:"14px 12px 12px",borderBottom:"1px solid #24212e"}}>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <div style={{width:30,height:30,borderRadius:9,display:"flex",
             alignItems:"center",justifyContent:"center",flexShrink:0}}>
             <img src={LOGO_T11} alt="T11 Sports" style={{width:"100%",height:"100%",objectFit:"contain"}}/>
           </div>
-          <div style={{lineHeight:1.3,display:"flex",flexDirection:"column",justifyContent:"center"}}>
-            <div style={{fontSize:14,fontWeight:700,color:"#fff",letterSpacing:"-0.2px"}}>T11 Sports</div>
-            <div style={{fontSize:9,fontWeight:700,color:"#d4af37",letterSpacing:"0.8px",
+          <div style={{lineHeight:1.25,display:"flex",flexDirection:"column",justifyContent:"center",minWidth:0}}>
+            <div style={{fontSize:13,fontWeight:700,color:"#fff",letterSpacing:"-0.2px"}}>T11 Sports</div>
+            <div style={{fontSize:8,fontWeight:700,color:"#d4af37",letterSpacing:"0.6px",
               textTransform:"uppercase"}}>Gestão da Loja</div>
           </div>
         </div>
@@ -1668,31 +1677,32 @@ function Sidebar({page,setPage,onLogout,open,onCloseMobile,escuro,setEscuro}){
         <MenuLabel>Gestão</MenuLabel>
         {MENU_GESTAO.map(it=><MenuItem key={it.k} item={it} active={page===it.k} onClick={()=>ir(it.k)}/>)}
         <div onClick={()=>setEscuro(e=>!e)} onMouseEnter={()=>setHDark(true)} onMouseLeave={()=>setHDark(false)}
-          style={{display:"flex",alignItems:"center",gap:11,padding:"9px 16px",cursor:"pointer",
-            borderRadius:8,margin:"8px 10px 2px",
+          style={{display:"flex",alignItems:"center",gap:9,padding:"9px 12px",cursor:"pointer",
+            borderRadius:8,margin:"8px 8px 2px",
             background:hDark?"rgba(255,255,255,0.08)":"transparent",transition:"all 0.15s"}}>
-          <span style={{fontSize:16,width:18,display:"inline-flex",justifyContent:"center"}}>🌙</span>
-          <span style={{fontSize:13,fontWeight:500,color:"#c4c1cc",flex:1}}>Modo Escuro</span>
-          <div style={{width:34,height:18,borderRadius:10,background:escuro?"#5c2030":"#3a3744",
-            position:"relative",transition:"all 0.2s"}}>
-            <div style={{width:14,height:14,borderRadius:"50%",background:"#fff",position:"absolute",
-              top:2,left:escuro?18:2,transition:"all 0.2s",boxShadow:"0 1px 3px rgba(0,0,0,0.3)"}}/>
+          <span style={{fontSize:15,width:16,display:"inline-flex",justifyContent:"center"}}>🌙</span>
+          <span style={{fontSize:12.5,fontWeight:500,color:"#c4c1cc",flex:1}}>Modo Escuro</span>
+          <div style={{width:30,height:16,borderRadius:10,background:escuro?"#5c2030":"#3a3744",
+            position:"relative",transition:"all 0.2s",flexShrink:0}}>
+            <div style={{width:12,height:12,borderRadius:"50%",background:"#fff",position:"absolute",
+              top:2,left:escuro?16:2,transition:"all 0.2s",boxShadow:"0 1px 3px rgba(0,0,0,0.3)"}}/>
           </div>
         </div>
       </div>
-      <div style={{borderTop:"1px solid #24212e",padding:"10px 14px",display:"flex",
-        alignItems:"center",gap:10}}>
-        <div style={{width:34,height:34,borderRadius:"50%",background:"#5c2030",color:"#fff",
-          display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:13,
+      <div style={{borderTop:"1px solid #24212e",padding:"10px 10px",display:"flex",
+        alignItems:"center",gap:8}}>
+        <div style={{width:30,height:30,borderRadius:"50%",background:"#5c2030",color:"#fff",
+          display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:12,
           flexShrink:0}}>F</div>
         <div style={{flex:1,minWidth:0}}>
-          <div style={{fontSize:13,fontWeight:700,color:"#fff"}}>Fabrício</div>
-          <div style={{fontSize:11,color:"#8a8794"}}>Administrador</div>
+          <div style={{fontSize:12.5,fontWeight:700,color:"#fff",whiteSpace:"nowrap",
+            overflow:"hidden",textOverflow:"ellipsis"}}>Fabrício</div>
+          <div style={{fontSize:10.5,color:"#8a8794"}}>Administrador</div>
         </div>
         <button onClick={onLogout} title="Sair"
-          style={{border:"none",background:"none",cursor:"pointer",padding:6,borderRadius:6,
-            display:"flex",color:"#8a8794"}}>
-          <Ico path={ICONS.logout} size={17}/>
+          style={{border:"none",background:"none",cursor:"pointer",padding:5,borderRadius:6,
+            display:"flex",color:"#8a8794",flexShrink:0}}>
+          <Ico path={ICONS.logout} size={16}/>
         </button>
       </div>
     </div>
@@ -1709,7 +1719,7 @@ function Topbar({page,busca,setBusca,onRefresh,escuro}){
   const refresh=()=>{setGirando(true);onRefresh&&onRefresh();setTimeout(()=>setGirando(false),500);};
   return(
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:16,
-      padding:"16px 28px",borderBottom:escuro?"1px solid #24242e":"1px solid #e5e7eb",
+      padding:"16px 22px",borderBottom:escuro?"1px solid #24242e":"1px solid #e5e7eb",
       background:escuro?"#13131a":"#fff",position:"sticky",top:0,zIndex:50}}>
       <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
         <div style={{width:4,height:20,background:"#5c2030",borderRadius:2}}/>
@@ -1859,7 +1869,7 @@ export default function App(){
         height:"100vh",overflowY:"auto"}}>
         <Topbar page={page} busca={busca} setBusca={setBusca} onRefresh={()=>setDb(loadDB())} escuro={escuro}/>
         <BuscaResultados resultado={resultadoBusca} onClose={()=>setBusca("")}/>
-        <div style={{padding:"20px 28px 48px",flex:1,width:"100%",boxSizing:"border-box"}}>
+        <div style={{padding:"20px 22px 40px",flex:1,width:"100%",boxSizing:"border-box"}}>
           {renderPage()}
         </div>
       </div>
