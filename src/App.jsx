@@ -644,7 +644,8 @@ function PageEstoque({db,onAdd,onEdit,onDelete}){
   const [busca,setBusca]=useState("");const [ft,setFt]=useState("Todos");
   const total=db.produtos.reduce((a,p)=>a+p.qtd,0);
   const valor=db.produtos.reduce((a,p)=>a+p.qtd*(p.custoProduto||0),0);
-  const times=["Todos",...new Set(db.produtos.map(p=>p.time||p.nome).filter(Boolean))];
+  const times=["Todos",...new Set(db.produtos.map(p=>p.time||p.nome).filter(Boolean))]
+    .sort((a,b)=>a==="Todos"?-1:b==="Todos"?1:a.localeCompare(b,"pt-BR"));
   const filtrados=db.produtos.filter(p=>
     (!busca||(p.time||p.nome||"").toLowerCase().includes(busca.toLowerCase())
       ||p.tamanho?.toLowerCase().includes(busca.toLowerCase())
@@ -697,53 +698,75 @@ function PageEstoque({db,onAdd,onEdit,onDelete}){
                 </tr>
               </thead>
               <tbody>
-                {filtrados.map(p=>{
-                  const ct=r((p.custoProduto||0)+(p.custoTaxa||0));
-                  const min=estoqueMinimo(p);
-                  const ok=p.qtd>=min;
-                  const zero=p.qtd===0;
-                  return(
-                    <HRow key={p.id}>
-                      <td style={TD}>
-                        <div style={{fontWeight:700,color:"#111",fontSize:13}}>
-                          {p.time||p.nome}{p.ano&&<span style={{color:"#9ca3af",fontWeight:400}}> {p.ano}</span>}
-                        </div>
-                      </td>
-                      <td style={{...TD,color:"#6b7280",fontSize:12}}>{p.uniforme||"—"}</td>
-                      <td style={{...TD,color:"#6b7280",fontSize:12}}>{p.ano||"—"}</td>
-                      <td style={{...TD,fontWeight:600}}>{p.tamanho}</td>
-                      <td style={{...TD,color:"#6b7280",fontSize:12}}>{p.cor||"—"}</td>
-                      <td style={TD}>{brl(ct)}</td>
-                      <td style={TD}>
-                        <span style={{fontWeight:800,fontSize:15,
-                          color:zero?"#dc2626":!ok?"#ca8a04":"#16a34a"}}>
-                          {p.qtd}
-                        </span>
-                      </td>
-                      <td style={TD}>
-                        <span style={{
-                          background:zero?"#fef2f2":!ok?"#fffbeb":"#f0fdf4",
-                          color:zero?"#dc2626":!ok?"#92400e":"#166534",
-                          border:`1px solid ${zero?"#fecaca":!ok?"#fde68a":"#bbf7d0"}`,
-                          padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:700,
-                          whiteSpace:"nowrap"
-                        }}>
-                          {zero?"Esgotado":!ok?"Baixo":"OK"}
-                        </span>
-                      </td>
-                      <td style={TD}>
-                        <div style={{display:"flex",gap:5}}>
-                          <button onClick={()=>onEdit(p)} title="Editar" style={IC}>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>
-                          </button>
-                          <button onClick={()=>onDelete(p.id)} title="Excluir" style={IC_DEL}>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
-                          </button>
-                        </div>
-                      </td>
-                    </HRow>
-                  );
-                })}
+                {(()=>{
+                  const rows=[];
+                  let lastTeam=null;
+                  filtrados.forEach(p=>{
+                    const teamName=p.time||p.nome||"Sem time";
+                    if(teamName!==lastTeam){
+                      lastTeam=teamName;
+                      const count=filtrados.filter(x=>(x.time||x.nome||"Sem time")===teamName).length;
+                      rows.push(
+                        <tr key={`grupo-${teamName}`}>
+                          <td colSpan={9} style={{padding:"9px 14px 7px",background:"#faf7f8",
+                            borderTop:"1px solid #f0e6e9",borderBottom:"1px solid #f0e6e9"}}>
+                            <span style={{fontWeight:800,fontSize:12,color:"#5c2030",
+                              textTransform:"uppercase",letterSpacing:"0.4px"}}>{teamName}</span>
+                            <span style={{marginLeft:8,fontSize:11,color:"#9ca3af",fontWeight:600}}>
+                              {count} {count===1?"item":"itens"}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    }
+                    const ct=r((p.custoProduto||0)+(p.custoTaxa||0));
+                    const min=estoqueMinimo(p);
+                    const ok=p.qtd>=min;
+                    const zero=p.qtd===0;
+                    rows.push(
+                      <HRow key={p.id}>
+                        <td style={TD}>
+                          <div style={{fontWeight:700,color:"#111",fontSize:13}}>
+                            {p.time||p.nome}{p.ano&&<span style={{color:"#9ca3af",fontWeight:400}}> {p.ano}</span>}
+                          </div>
+                        </td>
+                        <td style={{...TD,color:"#6b7280",fontSize:12}}>{p.uniforme||"—"}</td>
+                        <td style={{...TD,color:"#6b7280",fontSize:12}}>{p.ano||"—"}</td>
+                        <td style={{...TD,fontWeight:600}}>{p.tamanho}</td>
+                        <td style={{...TD,color:"#6b7280",fontSize:12}}>{p.cor||"—"}</td>
+                        <td style={TD}>{brl(ct)}</td>
+                        <td style={TD}>
+                          <span style={{fontWeight:800,fontSize:15,
+                            color:zero?"#dc2626":!ok?"#ca8a04":"#16a34a"}}>
+                            {p.qtd}
+                          </span>
+                        </td>
+                        <td style={TD}>
+                          <span style={{
+                            background:zero?"#fef2f2":!ok?"#fffbeb":"#f0fdf4",
+                            color:zero?"#dc2626":!ok?"#92400e":"#166534",
+                            border:`1px solid ${zero?"#fecaca":!ok?"#fde68a":"#bbf7d0"}`,
+                            padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:700,
+                            whiteSpace:"nowrap"
+                          }}>
+                            {zero?"Esgotado":!ok?"Baixo":"OK"}
+                          </span>
+                        </td>
+                        <td style={TD}>
+                          <div style={{display:"flex",gap:5}}>
+                            <button onClick={()=>onEdit(p)} title="Editar" style={IC}>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>
+                            </button>
+                            <button onClick={()=>onDelete(p.id)} title="Excluir" style={IC_DEL}>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+                            </button>
+                          </div>
+                        </td>
+                      </HRow>
+                    );
+                  });
+                  return rows;
+                })()}
               </tbody>
             </table>
           </div>
