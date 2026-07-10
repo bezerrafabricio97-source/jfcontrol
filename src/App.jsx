@@ -467,9 +467,7 @@ function PageDashboard({db,setDb,onNavigate}){
   const baixos=db.produtos.filter(isBaixo);
   const produzir=db.pedidos.filter(p=>p.status==="A Fazer"&&!isEstoque(p)).length;
   const emTransp=db.pedidos.filter(p=>p.status==="Em Transporte").length;
-  const mesAgora=mesAtual();
-  const nomeMesAgora=(()=>{const [ano,mesN]=mesAgora.split("-");const n=new Date(Number(ano),Number(mesN)-1,1).toLocaleDateString("pt-BR",{month:"long",year:"numeric"});return n.charAt(0).toUpperCase()+n.slice(1);})();
-  const entregue=db.pedidos.filter(p=>p.status==="Entregue"&&p.data?.startsWith(mesAgora)).length;
+  const entregue=db.pedidos.filter(p=>p.status==="Entregue"&&p.data?.startsWith(mesSel)).length;
   const atrasados=db.pedidos.filter(isAtrasado).length;
   const tarefasHj=db.tarefas.filter(t=>!t.feita&&t.data===hoje()).length;
   const vendas={};db.pedidos.forEach(p=>{const k=`${p.time||p.camisa} ${p.tamanho}`;vendas[k]=(vendas[k]||0)+(p.qtd||1);});
@@ -521,13 +519,13 @@ function PageDashboard({db,setDb,onNavigate}){
         {[
           {label:"Pedidos a Fazer",icon:"📦",value:produzir,color:"#a16207",status:"A Fazer"},
           {label:"Em Transporte",  icon:"🚚", value:emTransp, color:"#2563eb",status:"Em Transporte"},
-          {label:"Entregue",       icon:"✅", value:entregue, color:"#16a34a",status:"Entregue",sub:nomeMesAgora},
+          {label:"Entregue",       icon:"✅", value:entregue, color:"#16a34a",status:"Entregue",sub:nomeMesSel},
           {label:"Atrasados",      icon:"🔴", value:atrasados,color:"#dc2626",status:"__atrasados__"},
         ].map(({label,icon,value,color,status,sub})=>{
           const [h,setH]=useState(false);
           return(
             <div key={label} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)}
-              onClick={()=>onNavigate&&onNavigate("pedidos",status)}
+              onClick={()=>onNavigate&&onNavigate("pedidos",status,status==="Entregue"?mesSel:null)}
               style={{background:"#fff",border:"1px solid #e5e7eb",
                 borderRadius:10,padding:"14px 16px",transition:"all 0.18s",cursor:"pointer",
                 transform:h?"translateY(-2px)":"none",
@@ -841,7 +839,7 @@ function EstoqueColapsavel({pedidos,onEdit,onDelete}){
 }
 
 // ── PEDIDOS ──────────────────────────────────────────────────
-function PagePedidos({db,onAdd,onEdit,onDelete,onUpdateMeta,statusInicial}){
+function PagePedidos({db,onAdd,onEdit,onDelete,onUpdateMeta,statusInicial,mesInicial}){
   const [filtro,setFiltro]=useState("mes");const [busca,setBusca]=useState("");
   const [statusFiltro,setStatusFiltro]=useState(statusInicial||"todos");
   const [mesFiltro,setMesFiltro]=useState(""); // "" = usa o filtro de período acima
@@ -861,14 +859,14 @@ function PagePedidos({db,onAdd,onEdit,onDelete,onUpdateMeta,statusInicial}){
     return [...set].sort().reverse();
   },[db.pedidos]);
 
-  // Quando chega um status específico vindo do Dashboard
+  // Quando chega um status específico vindo do Dashboard (e opcionalmente um mês, ex: card Entregue)
   useEffect(()=>{
     if(statusInicial){
       setStatusFiltro(statusInicial==="__atrasados__"?"__atrasados__":statusInicial);
-      setFiltro(statusInicial==="Entregue"?"mes":"todos");
-      setMesFiltro("");
+      if(mesInicial){setMesFiltro(mesInicial);}
+      else{setFiltro("todos");setMesFiltro("");}
     }
-  },[statusInicial]);
+  },[statusInicial,mesInicial]);
 
   const filtrados=db.pedidos.filter(p=>{
     let mf;
@@ -1790,9 +1788,11 @@ export default function App(){
   const [db,setDb]=useState(loadDB);
   const [page,setPage]=useState("dashboard");
   const [statusFiltroPedidos,setStatusFiltroPedidos]=useState(null);
+  const [mesFiltroPedidos,setMesFiltroPedidos]=useState(null);
 
-  const navegarPara=(novaPagina,status)=>{
+  const navegarPara=(novaPagina,status,mes)=>{
     setStatusFiltroPedidos(status||null);
+    setMesFiltroPedidos(mes||null);
     setPage(novaPagina);
   };
   const [busca,setBusca]=useState("");
@@ -1853,7 +1853,7 @@ export default function App(){
     switch(page){
       case "dashboard": return <PageDashboard db={db} setDb={setDb} onNavigate={navegarPara}/>;
       case "estoque": return <PageEstoque db={db} onAdd={addProduto} onEdit={editProduto} onDelete={delProduto}/>;
-      case "pedidos": return <PagePedidos db={db} onAdd={addPedido} onEdit={editPedido} onDelete={delPedido} onUpdateMeta={updateMeta} statusInicial={statusFiltroPedidos}/>;
+      case "pedidos": return <PagePedidos db={db} onAdd={addPedido} onEdit={editPedido} onDelete={delPedido} onUpdateMeta={updateMeta} statusInicial={statusFiltroPedidos} mesInicial={mesFiltroPedidos}/>;
       case "gestao": return <PageGestao db={db} onEdit={editPedido} onAdd={addPedido}/>;
       case "custo": return <PageCusto db={db} setDb={setDb}/>;
       case "caixa": return <PageCaixa db={db} setDb={setDb}/>;
