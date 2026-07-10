@@ -515,7 +515,7 @@ function PageDashboard({db,setDb,onNavigate}){
 
 
       {/* 4 KPIs operacionais — clicáveis, levam direto para Pedidos já filtrado */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:14}}>
         {[
           {label:"Pedidos a Fazer",icon:"📦",value:produzir,color:"#a16207",status:"A Fazer"},
           {label:"Em Transporte",  icon:"🚚", value:emTransp, color:"#2563eb",status:"Em Transporte"},
@@ -547,9 +547,9 @@ function PageDashboard({db,setDb,onNavigate}){
           <div style={{width:"100%"}}>
             <table style={{width:"100%",borderCollapse:"collapse",tableLayout:"fixed"}}>
               <colgroup>
-                <col style={{width:"9%"}}/><col style={{width:"16%"}}/><col style={{width:"27%"}}/>
-                <col style={{width:"12%"}}/><col style={{width:"12%"}}/><col style={{width:"12%"}}/>
-                <col style={{width:"12%"}}/>
+                <col style={{width:"8%"}}/><col style={{width:"13%"}}/><col style={{width:"23%"}}/>
+                <col style={{width:"11%"}}/><col style={{width:"11%"}}/><col style={{width:"12%"}}/>
+                <col style={{width:"11%"}}/><col style={{width:"11%"}}/>
               </colgroup>
               <thead><tr>{["Data","Cliente","Camisa","Custo","Vendido","A Receber","Lucro"].map(h=>
                 <th key={h} style={h==="A Receber"?{...TDSM_TH,color:"#dc2626"}:TDSM_TH}>{h}</th>)}
@@ -593,14 +593,14 @@ function PageDashboard({db,setDb,onNavigate}){
           {meses.map(m=><option key={m} value={m}>{m}</option>)}
         </select>
       }>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:12,marginBottom:12}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(5,minmax(0,1fr))",gap:12,marginBottom:12}}>
           <KPI label="Pedidos"       value={pm.length}   dark/>
           <KPI label="Faturamento"   value={brl(fat)}    color="#16a34a"/>
           <KPI label="Custos"        value={brl(cus)}    color="#dc2626"/>
           <KPI label="Lucro Líquido" value={brl(luc)}    color={luc>=0?"#16a34a":"#dc2626"}/>
           <KPI label="Margem %"      value={pct(marg)}   color={marg>=30?"#16a34a":marg>=15?"#ca8a04":"#dc2626"}/>
         </div>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:12}}>
           <KPI label="Recebido"    value={brl(receb)} color="#16a34a"/>
           <KPI label="A Receber"   value={brl(pend)}  color={pend>0?"#ca8a04":"#16a34a"}/>
           <KPI label="Ticket Médio" value={brl(pm.length>0?r(fat/pm.length):0)}/>
@@ -614,7 +614,7 @@ function PageDashboard({db,setDb,onNavigate}){
             Nenhuma meta definida. Configure as metas na página de Pedidos.
           </div>
         ):(
-          <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(metasAtivas.length,3)},1fr)`,gap:14}}>
+          <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(metasAtivas.length,3)},minmax(0,1fr))`,gap:14}}>
             {metasAtivas.map(({label,atual,meta,fmtFn,color})=>{
               const p=meta>0?Math.min(100,(atual/meta)*100):0;
               const [h,setH]=useState(false);
@@ -678,7 +678,7 @@ function PageEstoque({db,onAdd,onEdit,onDelete}){
   return(
     <div>
       {/* KPIs — apenas o essencial */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:14,marginBottom:20}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:14,marginBottom:20}}>
         <KPI label="📦 Total em Estoque" value={`${total} peça${total!==1?"s":""}`}/>
         <KPI label="💰 Valor em Estoque" value={brl(valor)}/>
       </div>
@@ -912,7 +912,7 @@ function PagePedidos({db,onAdd,onEdit,onDelete,onUpdateMeta,statusInicial}){
         <div style={{fontSize:22,fontWeight:800,color:"#111"}}>Pedidos</div>
         <div style={{display:"flex",gap:8}}><Btn v="sec" onClick={()=>{setMt({...db.meta});setMm(true);}}>🎯 Meta</Btn><Btn onClick={onAdd}>+ Pedido</Btn></div>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:12,marginBottom:16}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(5,minmax(0,1fr))",gap:12,marginBottom:16}}>
         <KPI label={`Pedidos ${nomeMesKPI.split(" ")[0]}`} value={pm.length} dark/>
         <KPI label="Faturamento" value={brl(fat)} color="#16a34a"/>
         <KPI label="Custo" value={brl(cus)} color="#dc2626"/>
@@ -1047,7 +1047,7 @@ function PageGestao({db,onEdit,onAdd}){
         <Btn onClick={onAdd}>+ Pedido</Btn>
       </div>
       <div style={{marginBottom:16}}><Tabs options={FILTROS} value={filtro} onChange={setFiltro}/></div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:16}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:16}}>
         {KANBAN.map(col=>{
           const peds=filtrados.filter(p=>p.status===col.key);
           return(
@@ -1127,7 +1127,7 @@ function PageCusto({db,setDb}){
       <div style={{marginBottom:16}}><Tabs options={FILTROS} value={filtro} onChange={setFiltro}/></div>
 
       {/* KPIs principais */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:16}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:12,marginBottom:16}}>
         <KPI label="💰 Faturamento" value={brl(recTotal)} color="#111"/>
         <KPI label="✅ Recebido" value={brl(recebido)} color="#16a34a"/>
         <KPI label="⏳ A Receber" value={brl(aReceber)} color={aReceber>0?"#ca8a04":"#16a34a"}/>
@@ -1275,7 +1275,7 @@ function PageCaixa({db,setDb}){
       </Alert>
 
       {/* KPIs */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:14,marginBottom:16}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:14,marginBottom:16}}>
         <HCard color="#16a34a">
           <div style={{fontSize:11,color:"#9ca3af",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:6}}>💵 ENTRADAS</div>
           <div style={{fontSize:22,fontWeight:800,color:"#16a34a"}}>{brl(totalEntradas)}</div>
@@ -1391,7 +1391,7 @@ function PageTarefas({db,setDb}){
   const ABAS=[{k:"hoje",l:`Hoje (${hjCnt})`},{k:"semana",l:"Semana"},{k:"todas",l:"Todas"},{k:"feitas",l:`Feitas (${fCnt})`}];
   return(
     <div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:16}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:12,marginBottom:16}}>
         <KPI label="Hoje" value={hjCnt} color={hjCnt>0?"#dc2626":"#16a34a"}/>
         <KPI label="Pendentes" value={pCnt} color={pCnt>0?"#ca8a04":"#16a34a"}/>
         <KPI label="Concluídas" value={fCnt} color="#16a34a"/>
@@ -1449,7 +1449,7 @@ function PageFornecedor({db,setDb}){
   const grupos=ST_FORN.reduce((acc,st)=>{acc[st]=db.pedidosFornecedor.filter(p=>p.status===st);return acc;},{});
   return(
     <div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:16}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:12,marginBottom:16}}>
         {ST_FORN.map(st=><KPI key={st} label={st} value={grupos[st].length} color={st==="Chegou - Vendido"?"#16a34a":"#111"}/>)}
       </div>
       <div style={{display:"flex",justifyContent:"flex-end",marginBottom:16}}><Btn onClick={abrirN}>+ Novo Pedido</Btn></div>
