@@ -467,7 +467,9 @@ function PageDashboard({db,setDb,onNavigate}){
   const baixos=db.produtos.filter(isBaixo);
   const produzir=db.pedidos.filter(p=>p.status==="A Fazer"&&!isEstoque(p)).length;
   const emTransp=db.pedidos.filter(p=>p.status==="Em Transporte").length;
-  const entregue=db.pedidos.filter(p=>p.status==="Entregue").length;
+  const mesAgora=mesAtual();
+  const nomeMesAgora=(()=>{const [ano,mesN]=mesAgora.split("-");const n=new Date(Number(ano),Number(mesN)-1,1).toLocaleDateString("pt-BR",{month:"long",year:"numeric"});return n.charAt(0).toUpperCase()+n.slice(1);})();
+  const entregue=db.pedidos.filter(p=>p.status==="Entregue"&&p.data?.startsWith(mesAgora)).length;
   const atrasados=db.pedidos.filter(isAtrasado).length;
   const tarefasHj=db.tarefas.filter(t=>!t.feita&&t.data===hoje()).length;
   const vendas={};db.pedidos.forEach(p=>{const k=`${p.time||p.camisa} ${p.tamanho}`;vendas[k]=(vendas[k]||0)+(p.qtd||1);});
@@ -519,9 +521,9 @@ function PageDashboard({db,setDb,onNavigate}){
         {[
           {label:"Pedidos a Fazer",icon:"📦",value:produzir,color:"#a16207",status:"A Fazer"},
           {label:"Em Transporte",  icon:"🚚", value:emTransp, color:"#2563eb",status:"Em Transporte"},
-          {label:"Entregue",       icon:"✅", value:entregue, color:"#16a34a",status:"Entregue"},
+          {label:"Entregue",       icon:"✅", value:entregue, color:"#16a34a",status:"Entregue",sub:nomeMesAgora},
           {label:"Atrasados",      icon:"🔴", value:atrasados,color:"#dc2626",status:"__atrasados__"},
-        ].map(({label,icon,value,color,status})=>{
+        ].map(({label,icon,value,color,status,sub})=>{
           const [h,setH]=useState(false);
           return(
             <div key={label} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)}
@@ -536,6 +538,7 @@ function PageDashboard({db,setDb,onNavigate}){
                 <span style={{fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",
                   letterSpacing:"0.4px"}}>{label}</span>
               </div>
+              {sub&&<div style={{fontSize:10,color:"#b0aeb6",marginTop:3}}>{sub}</div>}
             </div>
           );
         })}
@@ -862,7 +865,7 @@ function PagePedidos({db,onAdd,onEdit,onDelete,onUpdateMeta,statusInicial}){
   useEffect(()=>{
     if(statusInicial){
       setStatusFiltro(statusInicial==="__atrasados__"?"__atrasados__":statusInicial);
-      setFiltro("todos");
+      setFiltro(statusInicial==="Entregue"?"mes":"todos");
       setMesFiltro("");
     }
   },[statusInicial]);
