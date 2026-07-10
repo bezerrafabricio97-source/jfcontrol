@@ -981,51 +981,47 @@ function PagePedidos({db,onAdd,onEdit,onDelete,onUpdateMeta,statusInicial,mesIni
           <div style={{width:"100%"}}>
             <table style={{width:"100%",borderCollapse:"collapse",tableLayout:"fixed"}}>
               <colgroup>
-                <col style={{width:"8%"}}/><col style={{width:"5%"}}/><col style={{width:"33%"}}/>
-                <col style={{width:"5%"}}/><col style={{width:"10%"}}/><col style={{width:"11%"}}/>
-                <col style={{width:"10%"}}/><col style={{width:"10%"}}/><col style={{width:"8%"}}/>
+                <col style={{width:"7%"}}/><col style={{width:"15%"}}/><col style={{width:"21%"}}/>
+                <col style={{width:"10%"}}/><col style={{width:"10%"}}/><col style={{width:"10%"}}/>
+                <col style={{width:"9%"}}/><col style={{width:"10%"}}/><col style={{width:"8%"}}/>
               </colgroup>
-              <thead><tr>{["Data","ID","Produto","QTD","Valor","Custo/Taxa","Lucro","Status",""].map(h=><th key={h} style={TH}>{h}</th>)}</tr></thead>
+              <thead><tr>{["Data","Cliente","Produto","Custo","Vendido","A Receber","Lucro","Status",""].map(h=>
+                <th key={h} style={h==="A Receber"?{...TH,color:"#dc2626"}:TH}>{h}</th>)}</tr></thead>
               <tbody>
                 {vendaOrdenada.map(p=>{
                   const v=r((p.precoVenda||0)*(p.qtd||1));const c=r(((p.custoProduto||0)+(p.custoTaxa||0))*(p.qtd||1));
-                  const l=r(v-c);const mg=v>0?r((l/v)*100):0;const sb=r(v-(p.valorRecebido||0));
+                  const l=r(v-c);const sb=r(v-(p.valorRecebido||0));
                   const concluido=p.status==="Entregue"&&sb<=0;
                   return(
                     <HRow key={p.id} style={concluido?{opacity:0.55,background:"#fafafa"}:{}}>
                       <td style={{...TD,color:"#9ca3af",whiteSpace:"nowrap"}}>{fmtData(p.data)}</td>
-                      <td style={{...TD,color:"#6b7280",fontSize:12,whiteSpace:"nowrap"}}>#{p.id}</td>
-                      <td style={{...TD,verticalAlign:"top",padding:"10px 14px"}}>
-                        <div style={{fontWeight:700,color:concluido?"#9ca3af":"#111",fontSize:14,
+                      <td style={{...TD,verticalAlign:"top"}}>
+                        <div style={{fontWeight:700,color:concluido?"#9ca3af":"#111",fontSize:13,
                           overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-                          {concluido&&<span style={{color:"#16a34a"}}>✓ </span>}
-                          {p.time||p.camisa}{p.ano&&` ${p.ano}`}
-                          {p.tamanho&&<span style={{color:"#6b7280",fontWeight:500}}> · {p.tamanho}</span>}
+                          {concluido&&<span style={{color:"#16a34a"}}>✓ </span>}{p.cliente}
                         </div>
-                        <div style={{fontSize:13,fontWeight:700,color:"#111",marginTop:3}}>{p.cliente}</div>
-                        {(p.telefone||p.captacao||sb>0||concluido)&&(
-                          <div style={{display:"flex",flexWrap:"wrap",gap:5,marginTop:6}}>
-                            {p.telefone&&<Tag tone="neutro">📞 {p.telefone}</Tag>}
-                            {p.captacao&&<Tag tone="roxo">{p.captacao}</Tag>}
-                            {sb>0&&<Tag tone="vermelho">Receber {brl(sb)}</Tag>}
-                            {concluido&&<Tag tone="verde">Concluído</Tag>}
-                          </div>
-                        )}
+                        {p.captacao&&<div style={{fontSize:10.5,color:"#9ca3af",marginTop:2}}>Captação: {p.captacao}</div>}
                       </td>
-                      <td style={{...TD,textAlign:"center"}}>{p.qtd||1}</td>
+                      <td style={{...TD,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                        {p.time||p.camisa}{p.ano&&` ${p.ano}`} {p.uniforme&&`(${p.uniforme})`} · {p.tamanho}
+                        {(p.qtd||1)>1&&<span style={{color:"#9ca3af"}}> · Qtd {p.qtd}</span>}
+                      </td>
+                      <td style={{...TD,color:"#dc2626",whiteSpace:"nowrap"}}>{brl(c)}</td>
                       <td style={{...TD,fontWeight:700,whiteSpace:"nowrap"}}>{brl(v)}</td>
                       <td style={{...TD,whiteSpace:"nowrap"}}>
-                        <div>{brl(c)}</div>
-                        <div style={{marginTop:4}}><MargBadge marg={mg}/></div>
+                        {sb>0
+                          ?<span style={{fontWeight:800,color:"#dc2626"}}>{brl(sb)}</span>
+                          :<span style={{color:"#16a34a",fontWeight:700}}>✓ Pago</span>
+                        }
                       </td>
                       <td style={{...TD,fontWeight:700,color:l>=0?"#16a34a":"#dc2626",whiteSpace:"nowrap"}}>{brl(l)}</td>
                       <td style={TD}><Badge status={isAtrasado(p)?"Atrasado":p.status}/></td>
                       <td style={TD}><div style={{display:"flex",gap:5}}>
-                        <button onClick={()=>onEdit(p)} title="Editar" style={{width:32,height:32,borderRadius:7,border:"1px solid #e5e7eb",background:"#f9fafb",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:"#374151"}}>
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>
+                        <button onClick={()=>onEdit(p)} title="Editar" style={{width:30,height:30,borderRadius:7,border:"1px solid #e5e7eb",background:"#f9fafb",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:"#374151"}}>
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>
                         </button>
-                        <button onClick={()=>onDelete(p.id)} title="Excluir" style={{width:32,height:32,borderRadius:7,border:"1px solid #fecaca",background:"#fef2f2",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:"#dc2626"}}>
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+                        <button onClick={()=>onDelete(p.id)} title="Excluir" style={{width:30,height:30,borderRadius:7,border:"1px solid #fecaca",background:"#fef2f2",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:"#dc2626"}}>
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
                         </button>
                       </div></td>
                     </HRow>
@@ -1900,7 +1896,7 @@ export default function App(){
       </div>
 
       {modalPedido&&(
-        <Modal title={modalPedido.modo==="editar"?"Editar Pedido":"Novo Pedido"} onClose={()=>setModalPedido(null)} wide>
+        <Modal title={modalPedido.modo==="editar"?`Editar Pedido #${modalPedido.item?.id}`:"Novo Pedido"} onClose={()=>setModalPedido(null)} wide>
           <FormPedido inicial={modalPedido.item} produtos={db.produtos}
             onSave={salvarPedido} onClose={()=>setModalPedido(null)}/>
         </Modal>
