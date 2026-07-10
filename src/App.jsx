@@ -187,6 +187,17 @@ function MargBadge({marg}){
   return<span style={{background:bg,color:fg,padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700}}>{pct(marg)}</span>;
 }
 
+function Tag({children,tone="neutro"}){
+  const T={
+    neutro:{bg:"#f3f4f6",fg:"#6b7280"},
+    roxo:{bg:"#f5f3ff",fg:"#7c3aed"},
+    vermelho:{bg:"#fef2f2",fg:"#dc2626"},
+    verde:{bg:"#f0fdf4",fg:"#16a34a"},
+  }[tone];
+  return<span style={{background:T.bg,color:T.fg,padding:"2px 8px",borderRadius:6,
+    fontSize:11,fontWeight:600,whiteSpace:"nowrap",display:"inline-flex",alignItems:"center"}}>{children}</span>;
+}
+
 function StockBadge({qtd,qtdMin}){
   if(qtd===0)return<span style={{background:"#fef2f2",color:"#dc2626",border:"1px solid #fecaca",padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:700}}>Sem estoque</span>;
   if(qtd<=qtdMin)return<span style={{background:"#fefce8",color:"#ca8a04",border:"1px solid #fde68a",padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:700}}>Baixo</span>;
@@ -967,8 +978,13 @@ function PagePedidos({db,onAdd,onEdit,onDelete,onUpdateMeta,statusInicial,mesIni
           Pedidos {vendaOrdenada.length>0&&<span style={{color:"#9ca3af",fontWeight:400,fontSize:13}}>({vendaOrdenada.length})</span>}
         </div>
         {vendaOrdenada.length===0?<Empty msg="Nenhum pedido encontrado." icon="🛒"/>:(
-          <div style={{overflowX:"auto"}}>
-            <table style={{width:"100%",borderCollapse:"collapse"}}>
+          <div style={{width:"100%"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",tableLayout:"fixed"}}>
+              <colgroup>
+                <col style={{width:"8%"}}/><col style={{width:"5%"}}/><col style={{width:"33%"}}/>
+                <col style={{width:"5%"}}/><col style={{width:"10%"}}/><col style={{width:"11%"}}/>
+                <col style={{width:"10%"}}/><col style={{width:"10%"}}/><col style={{width:"8%"}}/>
+              </colgroup>
               <thead><tr>{["Data","ID","Produto","QTD","Valor","Custo/Taxa","Lucro","Status",""].map(h=><th key={h} style={TH}>{h}</th>)}</tr></thead>
               <tbody>
                 {vendaOrdenada.map(p=>{
@@ -977,26 +993,32 @@ function PagePedidos({db,onAdd,onEdit,onDelete,onUpdateMeta,statusInicial,mesIni
                   const concluido=p.status==="Entregue"&&sb<=0;
                   return(
                     <HRow key={p.id} style={concluido?{opacity:0.55,background:"#fafafa"}:{}}>
-                      <td style={{...TD,color:"#9ca3af"}}>{fmtData(p.data)}</td>
-                      <td style={{...TD,color:"#6b7280",fontSize:12}}>#{p.id}</td>
-                      <td style={TD}>
-                        <div style={{fontWeight:700,color:concluido?"#9ca3af":"#111",fontSize:14,display:"flex",alignItems:"center",gap:6}}>
-                          {concluido&&<span style={{color:"#16a34a",fontSize:13}}>✓</span>}
+                      <td style={{...TD,color:"#9ca3af",whiteSpace:"nowrap"}}>{fmtData(p.data)}</td>
+                      <td style={{...TD,color:"#6b7280",fontSize:12,whiteSpace:"nowrap"}}>#{p.id}</td>
+                      <td style={{...TD,verticalAlign:"top",padding:"10px 14px"}}>
+                        <div style={{fontWeight:700,color:concluido?"#9ca3af":"#111",fontSize:14,
+                          overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                          {concluido&&<span style={{color:"#16a34a"}}>✓ </span>}
                           {p.time||p.camisa}{p.ano&&` ${p.ano}`}
-                          {p.tamanho&&<span style={{color:"#6b7280",fontWeight:500,fontSize:13}}> · {p.tamanho}</span>}
+                          {p.tamanho&&<span style={{color:"#6b7280",fontWeight:500}}> · {p.tamanho}</span>}
                         </div>
-                        <div style={{fontSize:12,color:"#6b7280",marginTop:3,display:"flex",flexWrap:"wrap",alignItems:"center",gap:5}}>
-                          <span style={{color:"#111",fontWeight:700,fontSize:13}}>{p.cliente}</span>
-                          {p.telefone&&<span style={{color:"#9ca3af"}}>· 📞 {p.telefone}</span>}
-                          {p.captacao&&<span style={{color:"#7c3aed",fontWeight:500}}>· {p.captacao}</span>}
-                          {sb>0&&<span style={{color:"#dc2626",fontWeight:700}}>· Receber {brl(sb)}</span>}
-                          {concluido&&<span style={{color:"#16a34a",fontWeight:600}}>· Concluído</span>}
-                        </div>
+                        <div style={{fontSize:13,fontWeight:700,color:"#111",marginTop:3}}>{p.cliente}</div>
+                        {(p.telefone||p.captacao||sb>0||concluido)&&(
+                          <div style={{display:"flex",flexWrap:"wrap",gap:5,marginTop:6}}>
+                            {p.telefone&&<Tag tone="neutro">📞 {p.telefone}</Tag>}
+                            {p.captacao&&<Tag tone="roxo">{p.captacao}</Tag>}
+                            {sb>0&&<Tag tone="vermelho">Receber {brl(sb)}</Tag>}
+                            {concluido&&<Tag tone="verde">Concluído</Tag>}
+                          </div>
+                        )}
                       </td>
                       <td style={{...TD,textAlign:"center"}}>{p.qtd||1}</td>
-                      <td style={{...TD,fontWeight:700}}>{brl(v)}</td>
-                      <td style={TD}>{brl(c)} <MargBadge marg={mg}/></td>
-                      <td style={{...TD,fontWeight:700,color:l>=0?"#16a34a":"#dc2626"}}>{brl(l)}</td>
+                      <td style={{...TD,fontWeight:700,whiteSpace:"nowrap"}}>{brl(v)}</td>
+                      <td style={{...TD,whiteSpace:"nowrap"}}>
+                        <div>{brl(c)}</div>
+                        <div style={{marginTop:4}}><MargBadge marg={mg}/></div>
+                      </td>
+                      <td style={{...TD,fontWeight:700,color:l>=0?"#16a34a":"#dc2626",whiteSpace:"nowrap"}}>{brl(l)}</td>
                       <td style={TD}><Badge status={isAtrasado(p)?"Atrasado":p.status}/></td>
                       <td style={TD}><div style={{display:"flex",gap:5}}>
                         <button onClick={()=>onEdit(p)} title="Editar" style={{width:32,height:32,borderRadius:7,border:"1px solid #e5e7eb",background:"#f9fafb",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:"#374151"}}>
