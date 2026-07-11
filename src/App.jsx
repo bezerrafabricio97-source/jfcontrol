@@ -429,7 +429,7 @@ function FormPedido({inicial,produtos,onSave,onClose}){
 
 function FormProduto({inicial,onSave,onClose}){
   const vz={time:"Bahia",ano:new Date().getFullYear(),uniforme:"Uniforme 1",tamanho:"M",
-    cor:"",qtd:0,qtdMin:1,custoProduto:45,custoTaxa:5,precoVenda:120,fornecedor:""};
+    cor:"",qtd:0,qtdMin:1,custoProduto:45,custoTaxa:5,precoVenda:120,fornecedor:"",feminina:false,retro:false};
   const [f,setF]=useState(inicial?{...vz,...inicial}:vz);
   const s=(k,v)=>setF(p=>({...p,[k]:v}));const n=(k,v)=>s(k,parseFloat(v)||0);
   const ct=r((f.custoProduto||0)+(f.custoTaxa||0));const mg=f.precoVenda>0?r(((f.precoVenda-ct)/f.precoVenda)*100):0;
@@ -447,6 +447,26 @@ function FormProduto({inicial,onSave,onClose}){
       <Field label="Uniforme" third><Sel value={f.uniforme} onChange={e=>s("uniforme",e.target.value)}>{UNIFORMES.map(u=><option key={u}>{u}</option>)}</Sel></Field>
       <Field label="Tamanho" third><Sel value={f.tamanho} onChange={e=>s("tamanho",e.target.value)}>{TAMANHOS.map(t=><option key={t}>{t}</option>)}</Sel></Field>
       <Field label="Cor" third><Inp value={f.cor} onChange={e=>s("cor",e.target.value)} placeholder="ex: Azul"/></Field>
+      <Field label="Linha" third>
+        <div onClick={()=>s("feminina",!f.feminina)} style={{
+          display:"flex",alignItems:"center",justifyContent:"center",gap:6,
+          padding:"9px 12px",borderRadius:8,cursor:"pointer",userSelect:"none",height:38,boxSizing:"border-box",
+          border:`2px solid ${f.feminina?"#ec4899":"#e5e7eb"}`,
+          background:f.feminina?"#fdf2f7":"#fff",
+          color:f.feminina?"#be185d":"#6b7280",fontWeight:700,fontSize:13,transition:"all 0.15s"}}>
+          {f.feminina?"👚 Feminina":"👕 Masculina"}
+        </div>
+      </Field>
+      <Field label="Modelo" third>
+        <div onClick={()=>s("retro",!f.retro)} style={{
+          display:"flex",alignItems:"center",justifyContent:"center",gap:6,
+          padding:"9px 12px",borderRadius:8,cursor:"pointer",userSelect:"none",height:38,boxSizing:"border-box",
+          border:`2px solid ${f.retro?"#b45309":"#e5e7eb"}`,
+          background:f.retro?"#fffbeb":"#fff",
+          color:f.retro?"#92400e":"#6b7280",fontWeight:700,fontSize:13,transition:"all 0.15s"}}>
+          {f.retro?"🕰️ Retrô":"Atual"}
+        </div>
+      </Field>
 
       {sep("Estoque")}
       <Field label="Quantidade em Estoque" half><Inp type="number" min="0" value={f.qtd} onChange={e=>n("qtd",e.target.value)}/></Field>
@@ -664,21 +684,44 @@ function PageEstoque({db,onAdd,onEdit,onDelete}){
   const [busca,setBusca]=useState("");const [ft,setFt]=useState("Todos");
   const total=db.produtos.reduce((a,p)=>a+p.qtd,0);
   const valor=db.produtos.reduce((a,p)=>a+p.qtd*(p.custoProduto||0),0);
-  const times=["Todos",...new Set(db.produtos.map(p=>p.time||p.nome).filter(Boolean))]
+  // Chave normalizada (sem espaços extras, sem diferença de maiúscula/minúscula) — só para
+  // AGRUPAR/COMPARAR. O que aparece na tela continua exatamente como foi digitado no cadastro.
+  const norm=(s)=>(s||"").trim().toLowerCase().replace(/\s+/g," ");
+  // Posição dentro do grupo: Uniforme 1 primeiro, Uniforme 2 depois, Retrô em seguida,
+  // "Feminina" sempre por último. Usa os campos estruturados quando existirem; para itens
+  // antigos (cadastrados antes desses campos existirem), cai de volta para procurar a
+  // palavra no nome, como fallback.
+  const tipoRank=(p)=>{
+    const texto=`${p.time||""} ${p.nome||""} ${p.uniforme||""}`.toLowerCase();
+    const fem=p.feminina===true||(p.feminina===undefined&&texto.includes("feminin"));
+    const retro=p.retro===true||(p.retro===undefined&&texto.includes("retr"));
+    if(fem)return 3;
+    if(retro)return 2;
+    if((p.uniforme||"").toLowerCase().includes("2"))return 1;
+    return 0;
+  };
+  const nomesOriginais=new Map(); // normalizado -> primeiro nome original encontrado (p/ exibir e filtrar)
+  db.produtos.forEach(p=>{
+    const key=norm(p.time||p.nome);
+    if(key&&!nomesOriginais.has(key))nomesOriginais.set(key,(p.time||p.nome).trim());
+  });
+  const times=["Todos",...nomesOriginais.values()]
     .sort((a,b)=>a==="Todos"?-1:b==="Todos"?1:a.localeCompare(b,"pt-BR"));
   const filtrados=db.produtos.filter(p=>
     (!busca||(p.time||p.nome||"").toLowerCase().includes(busca.toLowerCase())
       ||p.tamanho?.toLowerCase().includes(busca.toLowerCase())
       ||(p.cor||"").toLowerCase().includes(busca.toLowerCase()))
-    &&(ft==="Todos"||(p.time||p.nome)===ft))
+    &&(ft==="Todos"||norm(p.time||p.nome)===norm(ft)))
     .sort((a,b)=>{
-      const na=(a.time||a.nome||"").toLowerCase();
-      const nb=(b.time||b.nome||"").toLowerCase();
+      const na=norm(a.time||a.nome);
+      const nb=norm(b.time||b.nome);
       if(na<nb)return -1;if(na>nb)return 1;
-      // Mesmo time: ordena por uniforme, depois tamanho
-      const ua=(a.uniforme||"").toLowerCase();
-      const ub=(b.uniforme||"").toLowerCase();
-      if(ua<ub)return -1;if(ua>ub)return 1;
+      // Mesmo grupo: ano mais recente primeiro
+      const anoA=Number(a.ano)||0,anoB=Number(b.ano)||0;
+      if(anoA!==anoB)return anoB-anoA;
+      // Depois: Uniforme 1 → Uniforme 2 → Feminina
+      const ra=tipoRank(a),rb=tipoRank(b);
+      if(ra!==rb)return ra-rb;
       const ORDER=["PP","P","M","G","GG","XGG","3G","4G"];
       return ORDER.indexOf(a.tamanho)-ORDER.indexOf(b.tamanho);
     });
@@ -720,14 +763,15 @@ function PageEstoque({db,onAdd,onEdit,onDelete}){
               <tbody>
                 {(()=>{
                   const rows=[];
-                  let lastTeam=null;
+                  let lastKey=null;
                   filtrados.forEach(p=>{
-                    const teamName=p.time||p.nome||"Sem time";
-                    if(teamName!==lastTeam){
-                      lastTeam=teamName;
-                      const count=filtrados.filter(x=>(x.time||x.nome||"Sem time")===teamName).length;
+                    const teamName=(p.time||p.nome||"Sem time").trim();
+                    const key=norm(teamName);
+                    if(key!==lastKey){
+                      lastKey=key;
+                      const count=filtrados.filter(x=>norm(x.time||x.nome||"Sem time")===key).length;
                       rows.push(
-                        <tr key={`grupo-${teamName}`}>
+                        <tr key={`grupo-${key}`}>
                           <td colSpan={9} style={{padding:"9px 14px 7px",background:"#faf7f8",
                             borderTop:"1px solid #f0e6e9",borderBottom:"1px solid #f0e6e9"}}>
                             <span style={{fontWeight:800,fontSize:12,color:"#5c2030",
@@ -748,6 +792,10 @@ function PageEstoque({db,onAdd,onEdit,onDelete}){
                         <td style={TD}>
                           <div style={{fontWeight:700,color:"#111",fontSize:13}}>
                             {p.time||p.nome}{p.ano&&<span style={{color:"#9ca3af",fontWeight:400}}> {p.ano}</span>}
+                            {p.retro&&<span style={{marginLeft:6,fontSize:10,fontWeight:700,color:"#92400e",
+                              background:"#fffbeb",padding:"2px 7px",borderRadius:20}}>Retrô</span>}
+                            {p.feminina&&<span style={{marginLeft:6,fontSize:10,fontWeight:700,color:"#be185d",
+                              background:"#fdf2f7",padding:"2px 7px",borderRadius:20}}>Feminina</span>}
                           </div>
                         </td>
                         <td style={{...TD,color:"#6b7280",fontSize:12}}>{p.uniforme||"—"}</td>
