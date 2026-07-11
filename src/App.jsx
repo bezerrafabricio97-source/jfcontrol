@@ -684,9 +684,26 @@ function PageEstoque({db,onAdd,onEdit,onDelete}){
   const [busca,setBusca]=useState("");const [ft,setFt]=useState("Todos");
   const total=db.produtos.reduce((a,p)=>a+p.qtd,0);
   const valor=db.produtos.reduce((a,p)=>a+p.qtd*(p.custoProduto||0),0);
-  // Chave normalizada (sem espaços extras, sem diferença de maiúscula/minúscula) — só para
-  // AGRUPAR/COMPARAR. O que aparece na tela continua exatamente como foi digitado no cadastro.
-  const norm=(s)=>(s||"").trim().toLowerCase().replace(/\s+/g," ");
+  // Chave normalizada — só para AGRUPAR/COMPARAR. O que aparece na tela continua
+  // exatamente como foi digitado no cadastro. Ignora: espaço extra, maiúscula/minúscula,
+  // ano embutido no nome (item antigo) e as palavras "Feminina"/"Retrô" fora de parênteses
+  // — assim "Vitória", "Vitória 2025 Feminina" e "Vitória Retrô" caem no mesmo grupo.
+  // Conteúdo ENTRE parênteses (ex: "(Barbearia)", "(Pai)", "(Juan)") nunca é tocado —
+  // esses continuam formando grupos separados de propósito.
+  const norm=(s)=>{
+    const original=(s||"").trim();
+    const parenMatch=original.match(/\([^)]*\)/);
+    const parenPart=parenMatch?parenMatch[0].toLowerCase().replace(/\s+/g," "):"";
+    const semParen=original.replace(/\([^)]*\)/g,"").trim();
+    const limpo=semParen
+      .replace(/\b(19|20)\d{2}\b/g,"")
+      .replace(/\bfeminin[oa]s?\b/gi,"")
+      .replace(/\bretr[oô]s?\b/gi,"")
+      .replace(/\s+/g," ")
+      .trim()
+      .toLowerCase();
+    return (limpo+(parenPart?" "+parenPart:"")).trim();
+  };
   // Posição dentro do grupo: Uniforme 1 primeiro, Uniforme 2 depois, Retrô em seguida,
   // "Feminina" sempre por último. Usa os campos estruturados quando existirem; para itens
   // antigos (cadastrados antes desses campos existirem), cai de volta para procurar a
@@ -700,10 +717,13 @@ function PageEstoque({db,onAdd,onEdit,onDelete}){
     if((p.uniforme||"").toLowerCase().includes("2"))return 1;
     return 0;
   };
-  const nomesOriginais=new Map(); // normalizado -> primeiro nome original encontrado (p/ exibir e filtrar)
+  const nomesOriginais=new Map(); // normalizado -> nome original mais "genérico" pra representar o grupo
   db.produtos.forEach(p=>{
-    const key=norm(p.time||p.nome);
-    if(key&&!nomesOriginais.has(key))nomesOriginais.set(key,(p.time||p.nome).trim());
+    const nomeOriginal=(p.time||p.nome||"").trim();
+    if(!nomeOriginal)return;
+    const key=norm(nomeOriginal);
+    const generico=!/\(|feminin|retr[oô]/i.test(nomeOriginal);
+    if(!nomesOriginais.has(key)||generico)nomesOriginais.set(key,nomeOriginal);
   });
   const times=["Todos",...nomesOriginais.values()]
     .sort((a,b)=>a==="Todos"?-1:b==="Todos"?1:a.localeCompare(b,"pt-BR"));
