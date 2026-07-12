@@ -697,8 +697,8 @@ function PageEstoque({db,onAdd,onEdit,onDelete}){
     const semParen=original.replace(/\([^)]*\)/g,"").trim();
     const limpo=semParen
       .replace(/\b(19|20)\d{2}\b/g,"")
-      .replace(/\bfeminin[oa]s?\b/gi,"")
-      .replace(/\bretr[oô]s?\b/gi,"")
+      .replace(/(?<=^|\s)feminin[oa]s?(?=\s|$)/gi,"")
+      .replace(/(?<=^|\s)retr[oô]s?(?=\s|$)/gi,"")
       .replace(/\s+/g," ")
       .trim()
       .toLowerCase();
@@ -1049,22 +1049,26 @@ function PagePedidos({db,onAdd,onEdit,onDelete,onUpdateMeta,statusInicial,mesIni
           <div style={{width:"100%"}}>
             <table style={{width:"100%",borderCollapse:"collapse",tableLayout:"fixed"}}>
               <colgroup>
-                <col style={{width:"7%"}}/><col style={{width:"15%"}}/><col style={{width:"21%"}}/>
-                <col style={{width:"10%"}}/><col style={{width:"10%"}}/><col style={{width:"10%"}}/>
-                <col style={{width:"9%"}}/><col style={{width:"10%"}}/><col style={{width:"8%"}}/>
+                <col style={{width:"7%"}}/><col style={{width:"13%"}}/><col style={{width:"18%"}}/>
+                <col style={{width:"9%"}}/><col style={{width:"9%"}}/><col style={{width:"9%"}}/>
+                <col style={{width:"8%"}}/><col style={{width:"8%"}}/><col style={{width:"11%"}}/>
+                <col style={{width:"8%"}}/>
               </colgroup>
-              <thead><tr>{["Data","Cliente","Produto","Custo","Vendido","A Receber","Lucro","Status",""].map(h=>
+              <thead><tr>{["Data","Cliente","Produto","Custo","Vendido","A Receber","Lucro","Margem","Status",""].map(h=>
                 <th key={h} style={h==="A Receber"?{...TH,color:"#dc2626"}:TH}>{h}</th>)}</tr></thead>
               <tbody>
                 {vendaOrdenada.map(p=>{
                   const v=r((p.precoVenda||0)*(p.qtd||1));const c=r(((p.custoProduto||0)+(p.custoTaxa||0))*(p.qtd||1));
                   const l=r(v-c);const sb=r(v-(p.valorRecebido||0));
+                  const recebido=p.valorRecebido||0;
+                  // Margem realista: baseada só no que já entrou de fato (não no valor total da venda)
+                  const margemRecebida=recebido>0?r(((recebido-c)/recebido)*100):null;
                   const concluido=p.status==="Entregue"&&sb<=0;
                   return(
-                    <HRow key={p.id} style={concluido?{opacity:0.55,background:"#fafafa"}:{}}>
+                    <HRow key={p.id}>
                       <td style={{...TD,color:"#9ca3af",whiteSpace:"nowrap"}}>{fmtData(p.data)}</td>
                       <td style={{...TD,verticalAlign:"top"}}>
-                        <div style={{fontWeight:700,color:concluido?"#9ca3af":"#111",fontSize:13,
+                        <div style={{fontWeight:700,color:"#111",fontSize:13,
                           overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
                           {concluido&&<span style={{color:"#16a34a"}}>✓ </span>}{p.cliente}
                         </div>
@@ -1083,6 +1087,7 @@ function PagePedidos({db,onAdd,onEdit,onDelete,onUpdateMeta,statusInicial,mesIni
                         }
                       </td>
                       <td style={{...TD,fontWeight:700,color:l>=0?"#16a34a":"#dc2626",whiteSpace:"nowrap"}}>{brl(l)}</td>
+                      <td style={TD}>{margemRecebida===null?<span style={{color:"#c4c1cc",fontSize:12}}>—</span>:<MargBadge marg={margemRecebida}/>}</td>
                       <td style={TD}><Badge status={isAtrasado(p)?"Atrasado":p.status}/></td>
                       <td style={TD}><div style={{display:"flex",gap:5}}>
                         <button onClick={()=>onEdit(p)} title="Editar" style={{width:30,height:30,borderRadius:7,border:"1px solid #e5e7eb",background:"#f9fafb",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:"#374151"}}>
