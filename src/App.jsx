@@ -495,8 +495,9 @@ function PageDashboard({db,setDb,onNavigate}){
   const cus=pm.reduce((a,p)=>a+((p.custoProduto||0)+(p.custoTaxa||0))*(p.qtd||1),0);
   const luc=r(fat-cus);const marg=fat>0?r((luc/fat)*100):0;
   const receb=pm.reduce((a,p)=>a+(p.valorRecebido||0),0);const pend=r(fat-receb);
-  // Margem real: só considera o que já entrou de fato no caixa (não o faturamento total projetado)
-  const margReal=receb>0?r(((receb-cus)/receb)*100):null;
+  // Atual: só considera o que já entrou de fato no caixa (não o faturamento total projetado)
+  const lucAtual=r(receb-cus);
+  const margAtual=receb>0?r(((receb-cus)/receb)*100):null;
   const baixos=db.produtos.filter(isBaixo);
   const produzir=db.pedidos.filter(p=>p.status==="A Fazer"&&!isEstoque(p)).length;
   const emTransp=db.pedidos.filter(p=>p.status==="Em Transporte").length;
@@ -515,8 +516,7 @@ function PageDashboard({db,setDb,onNavigate}){
   })();
   const metasAtivas=[
     {label:"Pedidos",atual:pm.length,meta:db.meta.pedidos,fmtFn:v=>String(v),color:"#2563eb"},
-    {label:"Receita",atual:fat,meta:db.meta.receita,fmtFn:brl,color:"#16a34a"},
-    {label:"Lucro",atual:luc,meta:db.meta.lucro,fmtFn:brl,color:luc>=0?"#16a34a":"#dc2626"},
+    {label:"Faturamento",atual:fat,meta:db.meta.receita,fmtFn:brl,color:"#16a34a"},
     {label:"Posts",atual:0,meta:db.meta.posts||0,fmtFn:v=>String(v),color:"#7c3aed"},
     {label:"Futebol",atual:0,meta:db.meta.futebol||0,fmtFn:v=>String(v),color:"#f97316"},
   ].filter(m=>m.meta>0);
@@ -632,15 +632,14 @@ function PageDashboard({db,setDb,onNavigate}){
           <KPI label="Faturamento"      value={brl(fat)}    color="#16a34a"/>
           <KPI label="Custos"           value={brl(cus)}    color="#dc2626"/>
           <KPI label="Lucro Líquido"    value={brl(luc)}    color={luc>=0?"#16a34a":"#dc2626"}/>
-          <KPI label="Margem Projetada" value={pct(marg)}   color={marg>=30?"#16a34a":marg>=15?"#ca8a04":"#dc2626"}
-            sub="se tudo for recebido"/>
+          <KPI label="Margem Projetada" value={pct(marg)}   color={marg>=30?"#16a34a":marg>=15?"#ca8a04":"#dc2626"}/>
         </div>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:12}}>
-          <KPI label="Recebido"    value={brl(receb)} color="#16a34a"/>
-          <KPI label="Margem Real" value={margReal===null?"—":pct(margReal)}
-            color={margReal===null?"#9ca3af":margReal>=30?"#16a34a":margReal>=15?"#ca8a04":"#dc2626"}
-            sub="só o que já entrou"/>
-          <KPI label="A Receber"   value={brl(pend)}  color={pend>0?"#ca8a04":"#16a34a"}/>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(5,minmax(0,1fr))",gap:12}}>
+          <KPI label="Recebido"     value={brl(receb)} color="#16a34a"/>
+          <KPI label="Lucro Atual"  value={brl(lucAtual)} color={lucAtual>=0?"#16a34a":"#dc2626"}/>
+          <KPI label="Margem Atual" value={margAtual===null?"—":pct(margAtual)}
+            color={margAtual===null?"#9ca3af":margAtual>=30?"#16a34a":margAtual>=15?"#ca8a04":"#dc2626"}/>
+          <KPI label="A Receber"    value={brl(pend)}  color={pend>0?"#ca8a04":"#16a34a"}/>
           <KPI label="Ticket Médio" value={brl(pm.length>0?r(fat/pm.length):0)}/>
         </div>
       </Section>
@@ -782,7 +781,7 @@ function PageEstoque({db,onAdd,onEdit,onDelete}){
           <div style={{overflowX:"auto"}}>
             <table style={{width:"100%",borderCollapse:"collapse"}}>
               <thead>
-                <tr>{["Time / Camisa","Uniforme","Ano","Tam.","Cor","Custo","Qtd","Status",""].map(h=>
+                <tr>{["Time / Camisa","Uniforme","Ano","Tam.","Cor","Custo","Qtd",""].map(h=>
                   <th key={h} style={TH}>{h}</th>)}
                 </tr>
               </thead>
@@ -798,7 +797,7 @@ function PageEstoque({db,onAdd,onEdit,onDelete}){
                       const count=filtrados.filter(x=>norm(x.time||x.nome||"Sem time")===key).length;
                       rows.push(
                         <tr key={`grupo-${key}`}>
-                          <td colSpan={9} style={{padding:"9px 14px 7px",background:"#faf7f8",
+                          <td colSpan={8} style={{padding:"9px 14px 7px",background:"#faf7f8",
                             borderTop:"1px solid #f0e6e9",borderBottom:"1px solid #f0e6e9"}}>
                             <span style={{fontWeight:800,fontSize:12,color:"#5c2030",
                               textTransform:"uppercase",letterSpacing:"0.4px"}}>{teamName}</span>
@@ -833,17 +832,6 @@ function PageEstoque({db,onAdd,onEdit,onDelete}){
                           <span style={{fontWeight:800,fontSize:15,
                             color:zero?"#dc2626":!ok?"#ca8a04":"#16a34a"}}>
                             {p.qtd}
-                          </span>
-                        </td>
-                        <td style={TD}>
-                          <span style={{
-                            background:zero?"#fef2f2":!ok?"#fffbeb":"#f0fdf4",
-                            color:zero?"#dc2626":!ok?"#92400e":"#166534",
-                            border:`1px solid ${zero?"#fecaca":!ok?"#fde68a":"#bbf7d0"}`,
-                            padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:700,
-                            whiteSpace:"nowrap"
-                          }}>
-                            {zero?"Esgotado":!ok?"Baixo":"OK"}
                           </span>
                         </td>
                         <td style={TD}>
@@ -984,6 +972,9 @@ function PagePedidos({db,onAdd,onEdit,onDelete,onUpdateMeta,statusInicial,mesIni
   const fat=pm.reduce((a,p)=>a+(p.precoVenda||0)*(p.qtd||1),0);
   const cus=pm.reduce((a,p)=>a+((p.custoProduto||0)+(p.custoTaxa||0))*(p.qtd||1),0);
   const luc=r(fat-cus);const rec=pm.reduce((a,p)=>a+(p.valorRecebido||0),0);
+  const marg=fat>0?r((luc/fat)*100):0;
+  const lucAtual=r(rec-cus);
+  const margAtual=rec>0?r(((rec-cus)/rec)*100):null;
   const nomeMesKPI=(()=>{const [ano,mesN]=mesKPI.split("-");const n=new Date(Number(ano),Number(mesN)-1,1).toLocaleDateString("pt-BR",{month:"long",year:"numeric"});return n.charAt(0).toUpperCase()+n.slice(1);})();
   const FILTROS=[{k:"hoje",l:"Hoje"},{k:"semana",l:"Esta semana"},{k:"mes",l:"Este mês"},{k:"mes_ant",l:"Mês passado"},{k:"todos",l:"Todos"}];
   const FILTROS_STATUS=[
@@ -998,21 +989,36 @@ function PagePedidos({db,onAdd,onEdit,onDelete,onUpdateMeta,statusInicial,mesIni
         <div style={{fontSize:22,fontWeight:800,color:"#111"}}>Pedidos</div>
         <div style={{display:"flex",gap:8}}><Btn v="sec" onClick={()=>{setMt({...db.meta});setMm(true);}}>🎯 Meta</Btn><Btn onClick={onAdd}>+ Pedido</Btn></div>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(5,minmax(0,1fr))",gap:12,marginBottom:16}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(5,minmax(0,1fr))",gap:12,marginBottom:12}}>
         <KPI label={`Pedidos ${nomeMesKPI.split(" ")[0]}`} value={pm.length} dark/>
         <KPI label="Faturamento" value={brl(fat)} color="#16a34a"/>
         <KPI label="Custo" value={brl(cus)} color="#dc2626"/>
         <KPI label="Lucro Líquido" value={brl(luc)} color={luc>=0?"#16a34a":"#dc2626"}/>
-        <KPI label="A Receber" value={brl(r(fat-rec))} color={fat-rec>0?"#ca8a04":"#16a34a"}/>
+        <KPI label="Margem Projetada" value={pct(marg)} color={marg>=30?"#16a34a":marg>=15?"#ca8a04":"#dc2626"}/>
       </div>
-      <Section title={`🎯 Meta de ${nomeMesKPI}`}>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:20}}>
-          {[{l:"Pedidos",a:pm.length,m:db.meta.pedidos,f:v=>String(v)},{l:"Receita",a:fat,m:db.meta.receita,f:brl},{l:"Lucro",a:luc,m:db.meta.lucro,f:brl}].map(({l,a,m:mv,f})=>{
-            const p=mv>0?Math.min(100,(a/mv)*100):0;
-            return(<div key={l}><div style={{display:"flex",justifyContent:"space-between",fontSize:12,color:"#6b7280",marginBottom:2}}><span>{l}: <strong>{f(a)}</strong> / {f(mv)}</span><span style={{fontWeight:700}}>{p.toFixed(0)}%</span></div><Prog value={Math.max(0,a)} max={mv} color="#111"/></div>);
-          })}
-        </div>
-      </Section>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(5,minmax(0,1fr))",gap:12,marginBottom:16}}>
+        <KPI label="Recebido"     value={brl(rec)} color="#16a34a"/>
+        <KPI label="Lucro Atual"  value={brl(lucAtual)} color={lucAtual>=0?"#16a34a":"#dc2626"}/>
+        <KPI label="Margem Atual" value={margAtual===null?"—":pct(margAtual)}
+          color={margAtual===null?"#9ca3af":margAtual>=30?"#16a34a":margAtual>=15?"#ca8a04":"#dc2626"}/>
+        <KPI label="A Receber"    value={brl(r(fat-rec))} color={fat-rec>0?"#ca8a04":"#16a34a"}/>
+        <KPI label="Ticket Médio" value={brl(pm.length>0?r(fat/pm.length):0)}/>
+      </div>
+      {(()=>{
+        const metas=[{l:"Pedidos",a:pm.length,m:db.meta.pedidos,f:v=>String(v)},
+          {l:"Faturamento",a:fat,m:db.meta.receita,f:brl}].filter(x=>x.m>0);
+        if(metas.length===0)return null;
+        return(
+          <Section title={`🎯 Meta de ${nomeMesKPI}`}>
+            <div style={{display:"grid",gridTemplateColumns:`repeat(${metas.length},minmax(0,1fr))`,gap:20}}>
+              {metas.map(({l,a,m:mv,f})=>{
+                const p=mv>0?Math.min(100,(a/mv)*100):0;
+                return(<div key={l}><div style={{display:"flex",justifyContent:"space-between",fontSize:12,color:"#6b7280",marginBottom:2}}><span>{l}: <strong>{f(a)}</strong> / {f(mv)}</span><span style={{fontWeight:700}}>{p.toFixed(0)}%</span></div><Prog value={Math.max(0,a)} max={mv} color="#111"/></div>);
+              })}
+            </div>
+          </Section>
+        );
+      })()}
       {(statusFiltro!=="todos")&&(
         <Alert type="info">
           {statusFiltro==="__atrasados__"
@@ -1074,9 +1080,18 @@ function PagePedidos({db,onAdd,onEdit,onDelete,onUpdateMeta,statusInicial,mesIni
                     <HRow key={p.id}>
                       <td style={{...TD,color:"#9ca3af",whiteSpace:"nowrap"}}>{fmtData(p.data)}</td>
                       <td style={{...TD,verticalAlign:"top"}}>
-                        <div style={{fontWeight:700,color:"#111",fontSize:13,
-                          overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-                          {concluido&&<span style={{color:"#16a34a"}}>✓ </span>}{p.cliente}
+                        <div style={{display:"flex",alignItems:"center",gap:6,overflow:"hidden"}}>
+                          {concluido&&(
+                            <span style={{width:16,height:16,borderRadius:"50%",background:"#16a34a",
+                              display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff"
+                                strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
+                                <polyline points="20 6 9 17 4 12"/>
+                              </svg>
+                            </span>
+                          )}
+                          <div style={{fontWeight:700,color:"#111",fontSize:13,
+                            overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.cliente}</div>
                         </div>
                         {p.captacao&&<div style={{fontSize:10.5,color:"#9ca3af",marginTop:2}}>Captação: {p.captacao}</div>}
                       </td>
@@ -1119,8 +1134,7 @@ function PagePedidos({db,onAdd,onEdit,onDelete,onUpdateMeta,statusInicial,mesIni
       {mm&&<Modal title="Editar Meta Mensal" onClose={()=>setMm(false)}>
         <div style={{display:"flex",flexWrap:"wrap",gap:12}}>
           <Field label="Meta de Pedidos"><Inp type="number" min="0" value={mt.pedidos} onChange={e=>setMt(m=>({...m,pedidos:parseInt(e.target.value)||0}))}/></Field>
-          <Field label="Meta de Receita (R$)"><Inp type="number" min="0" step="0.01" value={mt.receita} onChange={e=>setMt(m=>({...m,receita:parseFloat(e.target.value)||0}))}/></Field>
-          <Field label="Meta de Lucro (R$)"><Inp type="number" min="0" step="0.01" value={mt.lucro} onChange={e=>setMt(m=>({...m,lucro:parseFloat(e.target.value)||0}))}/></Field>
+          <Field label="Meta de Faturamento (R$)"><Inp type="number" min="0" step="0.01" value={mt.receita} onChange={e=>setMt(m=>({...m,receita:parseFloat(e.target.value)||0}))}/></Field>
         </div>
         <MBtns onClose={()=>setMm(false)} onSave={()=>{onUpdateMeta(mt);setMm(false);}} label="Salvar Meta"/>
       </Modal>}
@@ -1206,6 +1220,9 @@ function PageCusto({db,setDb}){
   const lucBruto=r(recTotal-cusProd-cusTaxa);
   const lucLiq=r(recTotal-cusTotal);
   const marg=recTotal>0?r((lucLiq/recTotal)*100):0;
+  // Atual: baseado só no que já entrou de fato (recebido), não no faturamento projetado
+  const lucLiqAtual=r(recebido-cusTotal);
+  const margAtual=recebido>0?r((lucLiqAtual/recebido)*100):null;
 
   const salvD=()=>{
     if(!fd.descricao.trim())return alert("Informe a descrição.");
@@ -1225,11 +1242,13 @@ function PageCusto({db,setDb}){
       <div style={{marginBottom:16}}><Tabs options={FILTROS} value={filtro} onChange={setFiltro}/></div>
 
       {/* KPIs principais */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:12,marginBottom:16}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(5,minmax(0,1fr))",gap:12,marginBottom:16}}>
         <KPI label="💰 Faturamento" value={brl(recTotal)} color="#111"/>
         <KPI label="✅ Recebido" value={brl(recebido)} color="#16a34a"/>
         <KPI label="⏳ A Receber" value={brl(aReceber)} color={aReceber>0?"#ca8a04":"#16a34a"}/>
-        <KPI label="📊 Margem" value={`${marg.toFixed(1)}%`} color={marg>=30?"#16a34a":marg>=15?"#ca8a04":"#dc2626"}/>
+        <KPI label="📊 Margem Projetada" value={`${marg.toFixed(1)}%`} color={marg>=30?"#16a34a":marg>=15?"#ca8a04":"#dc2626"}/>
+        <KPI label="📈 Margem Atual" value={margAtual===null?"—":`${margAtual.toFixed(1)}%`}
+          color={margAtual===null?"#9ca3af":margAtual>=30?"#16a34a":margAtual>=15?"#ca8a04":"#dc2626"}/>
       </div>
 
       {/* Resumo financeiro */}
@@ -1248,9 +1267,13 @@ function PageCusto({db,setDb}){
           </div>
         ))}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",
-          padding:"16px 0",borderTop:"2px solid #e5e7eb",marginTop:4}}>
-          <span style={{fontSize:16,fontWeight:800,color:"#111"}}>🎯 Lucro Líquido</span>
-          <span style={{fontSize:22,fontWeight:900,color:lucLiq>=0?"#16a34a":"#dc2626"}}>{brl(lucLiq)}</span>
+          padding:"14px 0",borderTop:"2px solid #e5e7eb",marginTop:4}}>
+          <span style={{fontSize:15,fontWeight:800,color:"#111"}}>🎯 Lucro Líquido Projetado</span>
+          <span style={{fontSize:20,fontWeight:900,color:lucLiq>=0?"#16a34a":"#dc2626"}}>{brl(lucLiq)}</span>
+        </div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0"}}>
+          <span style={{fontSize:13,fontWeight:700,color:"#6b7280"}}>📈 Lucro Líquido Atual</span>
+          <span style={{fontSize:16,fontWeight:800,color:lucLiqAtual>=0?"#16a34a":"#dc2626"}}>{brl(lucLiqAtual)}</span>
         </div>
       </Section>
 
