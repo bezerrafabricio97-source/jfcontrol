@@ -495,6 +495,8 @@ function PageDashboard({db,setDb,onNavigate}){
   const cus=pm.reduce((a,p)=>a+((p.custoProduto||0)+(p.custoTaxa||0))*(p.qtd||1),0);
   const luc=r(fat-cus);const marg=fat>0?r((luc/fat)*100):0;
   const receb=pm.reduce((a,p)=>a+(p.valorRecebido||0),0);const pend=r(fat-receb);
+  // Margem real: só considera o que já entrou de fato no caixa (não o faturamento total projetado)
+  const margReal=receb>0?r(((receb-cus)/receb)*100):null;
   const baixos=db.produtos.filter(isBaixo);
   const produzir=db.pedidos.filter(p=>p.status==="A Fazer"&&!isEstoque(p)).length;
   const emTransp=db.pedidos.filter(p=>p.status==="Em Transporte").length;
@@ -626,14 +628,18 @@ function PageDashboard({db,setDb,onNavigate}){
         </select>
       }>
         <div style={{display:"grid",gridTemplateColumns:"repeat(5,minmax(0,1fr))",gap:12,marginBottom:12}}>
-          <KPI label="Pedidos"       value={pm.length}   dark/>
-          <KPI label="Faturamento"   value={brl(fat)}    color="#16a34a"/>
-          <KPI label="Custos"        value={brl(cus)}    color="#dc2626"/>
-          <KPI label="Lucro Líquido" value={brl(luc)}    color={luc>=0?"#16a34a":"#dc2626"}/>
-          <KPI label="Margem %"      value={pct(marg)}   color={marg>=30?"#16a34a":marg>=15?"#ca8a04":"#dc2626"}/>
+          <KPI label="Pedidos"          value={pm.length}   dark/>
+          <KPI label="Faturamento"      value={brl(fat)}    color="#16a34a"/>
+          <KPI label="Custos"           value={brl(cus)}    color="#dc2626"/>
+          <KPI label="Lucro Líquido"    value={brl(luc)}    color={luc>=0?"#16a34a":"#dc2626"}/>
+          <KPI label="Margem Projetada" value={pct(marg)}   color={marg>=30?"#16a34a":marg>=15?"#ca8a04":"#dc2626"}
+            sub="se tudo for recebido"/>
         </div>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:12}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:12}}>
           <KPI label="Recebido"    value={brl(receb)} color="#16a34a"/>
+          <KPI label="Margem Real" value={margReal===null?"—":pct(margReal)}
+            color={margReal===null?"#9ca3af":margReal>=30?"#16a34a":margReal>=15?"#ca8a04":"#dc2626"}
+            sub="só o que já entrou"/>
           <KPI label="A Receber"   value={brl(pend)}  color={pend>0?"#ca8a04":"#16a34a"}/>
           <KPI label="Ticket Médio" value={brl(pm.length>0?r(fat/pm.length):0)}/>
         </div>
