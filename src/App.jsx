@@ -151,7 +151,7 @@ const TDSM_TH={textAlign:"left",padding:"8px 10px",fontSize:10.5,color:"#6b7280"
 const TDSM={padding:"9px 10px",borderBottom:"1px solid #f5f5f5",fontSize:12.5,
   color:"#374151",verticalAlign:"middle"};
 
-function Inp(p){return <input style={INP} {...p}/>;}
+function Inp({style:styleOverride,...p}){return <input style={{...INP,...styleOverride}} {...p}/>;}
 function Sel({children,...p}){return <select style={INP} {...p}>{children}</select>;}
 
 function Btn({children,v="primary",onClick,disabled,style:sx}){
@@ -344,13 +344,22 @@ function Alert({type,children}){
 // ── FORMULÁRIOS ──────────────────────────────────────────────
 function FormPedido({inicial,produtos,onSave,onClose}){
   const vz={data:hoje(),cliente:"",telefone:"",captacao:"",time:"",ano:new Date().getFullYear(),
-    uniforme:"Uniforme 1",tamanho:"M",qtd:1,paraEstoque:false,
+    uniforme:"Uniforme 1",tamanho:"M",qtd:1,paraEstoque:false,vendaEstoque:false,produtoEstoqueId:null,
     precoVenda:0,valorRecebido:0,custoProduto:0,custoTaxa:0,status:"A Fazer",obs:""};
   const [f,setF]=useState(inicial?{...vz,...inicial}:vz);
   const s=(k,v)=>setF(p=>({...p,[k]:v}));const n=(k,v)=>s(k,parseFloat(v)||0);
   const fill=t=>{const pd=produtos.find(x=>x.time===t);
     if(pd)setF(x=>({...x,time:t,custoProduto:pd.custoProduto,custoTaxa:pd.custoTaxa,precoVenda:pd.precoVenda,tamanho:pd.tamanho}));
     else s("time",t);};
+  const estoqueDisponivel=produtos.filter(p=>p.qtd>0);
+  const produtoSel=f.produtoEstoqueId?produtos.find(p=>p.id===f.produtoEstoqueId):null;
+  const selecionarProdutoEstoque=id=>{
+    const pd=produtos.find(p=>String(p.id)===String(id));
+    if(!pd)return;
+    setF(x=>({...x,produtoEstoqueId:pd.id,time:pd.time||pd.nome,ano:pd.ano,uniforme:pd.uniforme,
+      tamanho:pd.tamanho,custoProduto:pd.custoProduto,custoTaxa:pd.custoTaxa,
+      precoVenda:pd.precoVenda||x.precoVenda,qtd:1}));
+  };
   const v=r((f.precoVenda||0)*(f.qtd||1));const c=r(((f.custoProduto||0)+(f.custoTaxa||0))*(f.qtd||1));
   const l=r(v-c);const sb=r(v-(f.valorRecebido||0));const mg=v>0?r((l/v)*100):0;
   const times=[...new Set([...produtos.map(p=>p.time||p.nome).filter(Boolean),...TIMES])];
@@ -358,24 +367,45 @@ function FormPedido({inicial,produtos,onSave,onClose}){
     marginBottom:-4,fontSize:10,fontWeight:800,color:"#9ca3af",letterSpacing:"0.8px",
     textTransform:"uppercase"}}>{titulo}</div>;
   return(<>
-    {/* Toggle de Estoque — sempre visível no topo */}
-    <div onClick={()=>s("paraEstoque",!f.paraEstoque)} style={{display:"flex",alignItems:"center",
-      gap:12,padding:"12px 16px",borderRadius:10,marginBottom:8,cursor:"pointer",
-      background:f.paraEstoque?"#f0fdf4":"#fafafa",border:`2px solid ${f.paraEstoque?"#16a34a":"#e5e7eb"}`,
-      transition:"all 0.2s"}}>
-      <div style={{width:42,height:22,borderRadius:11,background:f.paraEstoque?"#16a34a":"#d1d5db",
-        position:"relative",flexShrink:0,transition:"all 0.2s"}}>
-        <div style={{width:18,height:18,borderRadius:"50%",background:"#fff",position:"absolute",
-          top:2,left:f.paraEstoque?22:2,transition:"all 0.2s",boxShadow:"0 1px 3px rgba(0,0,0,0.2)"}}/>
-      </div>
-      <div>
-        <div style={{fontSize:13,fontWeight:700,color:f.paraEstoque?"#15803d":"#374151"}}>
-          📦 Pedido para Estoque
+    {/* Toggles de Estoque — sempre visíveis no topo, excludentes entre si */}
+    <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:8}}>
+      <div onClick={()=>setF(x=>({...x,paraEstoque:!x.paraEstoque,vendaEstoque:false,produtoEstoqueId:null}))}
+        style={{flex:"1 1 260px",display:"flex",alignItems:"center",
+        gap:12,padding:"12px 16px",borderRadius:10,cursor:"pointer",
+        background:f.paraEstoque?"#f0fdf4":"#fafafa",border:`2px solid ${f.paraEstoque?"#16a34a":"#e5e7eb"}`,
+        transition:"all 0.2s"}}>
+        <div style={{width:42,height:22,borderRadius:11,background:f.paraEstoque?"#16a34a":"#d1d5db",
+          position:"relative",flexShrink:0,transition:"all 0.2s"}}>
+          <div style={{width:18,height:18,borderRadius:"50%",background:"#fff",position:"absolute",
+            top:2,left:f.paraEstoque?22:2,transition:"all 0.2s",boxShadow:"0 1px 3px rgba(0,0,0,0.2)"}}/>
         </div>
-        <div style={{fontSize:11,color:f.paraEstoque?"#16a34a":"#9ca3af",marginTop:1}}>
-          {f.paraEstoque
-            ?"Este pedido NÃO será contabilizado nas métricas de vendas (faturamento, metas, lucro)"
-            :"Ativar se este pedido é para repor seu estoque, não uma venda ao cliente"}
+        <div>
+          <div style={{fontSize:13,fontWeight:700,color:f.paraEstoque?"#15803d":"#374151"}}>
+            📦 Pedido para Estoque
+          </div>
+          <div style={{fontSize:11,color:f.paraEstoque?"#16a34a":"#9ca3af",marginTop:1}}>
+            {f.paraEstoque?"Não conta nas métricas de vendas":"Ativar se é reposição, não venda"}
+          </div>
+        </div>
+      </div>
+      <div onClick={()=>setF(x=>({...x,vendaEstoque:!x.vendaEstoque,paraEstoque:false,
+        status:!x.vendaEstoque?"Entregue":x.status}))}
+        style={{flex:"1 1 260px",display:"flex",alignItems:"center",
+        gap:12,padding:"12px 16px",borderRadius:10,cursor:"pointer",
+        background:f.vendaEstoque?"#faf7f8":"#fafafa",border:`2px solid ${f.vendaEstoque?"#5c2030":"#e5e7eb"}`,
+        transition:"all 0.2s"}}>
+        <div style={{width:42,height:22,borderRadius:11,background:f.vendaEstoque?"#5c2030":"#d1d5db",
+          position:"relative",flexShrink:0,transition:"all 0.2s"}}>
+          <div style={{width:18,height:18,borderRadius:"50%",background:"#fff",position:"absolute",
+            top:2,left:f.vendaEstoque?22:2,transition:"all 0.2s",boxShadow:"0 1px 3px rgba(0,0,0,0.2)"}}/>
+        </div>
+        <div>
+          <div style={{fontSize:13,fontWeight:700,color:f.vendaEstoque?"#5c2030":"#374151"}}>
+            🏷️ Vender do Estoque
+          </div>
+          <div style={{fontSize:11,color:f.vendaEstoque?"#8a4a5c":"#9ca3af",marginTop:1}}>
+            {f.vendaEstoque?"Desconta a camisa escolhida do estoque":"Ativar se a camisa já está pronta, no estoque"}
+          </div>
         </div>
       </div>
     </div>
@@ -392,17 +422,36 @@ function FormPedido({inicial,produtos,onSave,onClose}){
       </>}
 
       {sep("Produto")}
-      <Field label="Time / Camisa" half>
-        <Inp list="lst-tp" value={f.time} onChange={e=>fill(e.target.value)} placeholder="ex: Vitória Rubro Negra" autoFocus={!!f.paraEstoque}/>
-        <datalist id="lst-tp">{times.map(t=><option key={t} value={t}/>)}</datalist>
-      </Field>
-      <Field label="Ano" third><Inp type="number" min="2000" max="2099" value={f.ano||new Date().getFullYear()} onChange={e=>s("ano",parseInt(e.target.value)||new Date().getFullYear())}/></Field>
-      <Field label="Uniforme" third><Sel value={f.uniforme} onChange={e=>s("uniforme",e.target.value)}>{UNIFORMES.map(u=><option key={u}>{u}</option>)}</Sel></Field>
-      <Field label="Tamanho" half><Sel value={f.tamanho} onChange={e=>s("tamanho",e.target.value)}>{TAMANHOS.map(t=><option key={t}>{t}</option>)}</Sel></Field>
+      {f.vendaEstoque?(<>
+        <Field label="Escolher camisa">
+          <Sel value={f.produtoEstoqueId||""} onChange={e=>selecionarProdutoEstoque(e.target.value)}>
+            <option value="">Selecione...</option>
+            {estoqueDisponivel.map(p=>
+              <option key={p.id} value={p.id}>
+                {p.time||p.nome}{p.ano?` ${p.ano}`:""} · {p.uniforme} · {p.tamanho}{p.cor?` · ${p.cor}`:""} ({p.qtd} disp.)
+              </option>)}
+          </Sel>
+          {produtoSel&&<div style={{fontSize:11,color:"#9ca3af",marginTop:4}}>{produtoSel.qtd} disponíveis em estoque</div>}
+        </Field>
+        <Field label="Quantidade" third>
+          <Inp type="number" min="1" max={produtoSel?produtoSel.qtd:1} value={f.qtd}
+            onChange={e=>n("qtd",Math.max(1,Math.min(parseInt(e.target.value)||1,produtoSel?produtoSel.qtd:1)))}/>
+        </Field>
+      </>):(<>
+        <Field label="Time / Camisa" half>
+          <Inp list="lst-tp" value={f.time} onChange={e=>fill(e.target.value)} placeholder="ex: Vitória Rubro Negra" autoFocus={!!f.paraEstoque}/>
+          <datalist id="lst-tp">{times.map(t=><option key={t} value={t}/>)}</datalist>
+        </Field>
+        <Field label="Ano" third><Inp type="number" min="2000" max="2099" value={f.ano||new Date().getFullYear()} onChange={e=>s("ano",parseInt(e.target.value)||new Date().getFullYear())}/></Field>
+        <Field label="Uniforme" third><Sel value={f.uniforme} onChange={e=>s("uniforme",e.target.value)}>{UNIFORMES.map(u=><option key={u}>{u}</option>)}</Sel></Field>
+        <Field label="Tamanho" half><Sel value={f.tamanho} onChange={e=>s("tamanho",e.target.value)}>{TAMANHOS.map(t=><option key={t}>{t}</option>)}</Sel></Field>
+      </>)}
 
       {sep("Financeiro")}
-      <Field label="Custo Produto" half><Inp type="number" min="0" step="0.01" value={f.custoProduto} onChange={e=>n("custoProduto",e.target.value)}/></Field>
-      <Field label="Custo Taxa" half><Inp type="number" min="0" step="0.01" value={f.custoTaxa} onChange={e=>n("custoTaxa",e.target.value)}/></Field>
+      <Field label="Custo Produto" half><Inp type="number" min="0" step="0.01" value={f.custoProduto} disabled={f.vendaEstoque}
+        style={f.vendaEstoque?{background:"#fafafa",color:"#9ca3af"}:undefined} onChange={e=>n("custoProduto",e.target.value)}/></Field>
+      <Field label="Custo Taxa" half><Inp type="number" min="0" step="0.01" value={f.custoTaxa} disabled={f.vendaEstoque}
+        style={f.vendaEstoque?{background:"#fafafa",color:"#9ca3af"}:undefined} onChange={e=>n("custoTaxa",e.target.value)}/></Field>
       {!f.paraEstoque&&<>
         <Field label="Preço de Venda" half><Inp type="number" min="0" step="0.01" value={f.precoVenda} onChange={e=>n("precoVenda",e.target.value)}/></Field>
         <Field label="Valor Recebido (R$)" half><Inp type="number" min="0" step="0.01" value={f.valorRecebido} onChange={e=>n("valorRecebido",e.target.value)} placeholder="0"/></Field>
@@ -421,6 +470,8 @@ function FormPedido({inicial,produtos,onSave,onClose}){
     ]}/>}
     <MBtns onClose={onClose} onSave={()=>{
       if(!f.paraEstoque&&!f.cliente.trim())return alert("Informe o cliente ou ative 'Pedido para Estoque'.");
+      if(f.vendaEstoque&&!f.produtoEstoqueId)return alert("Escolha a camisa do estoque.");
+      if(f.vendaEstoque&&produtoSel&&(f.qtd||1)>produtoSel.qtd)return alert("Quantidade maior que o disponível em estoque.");
       if(!f.time.trim())return alert("Informe a camisa.");
       onSave({...f,cliente:f.paraEstoque?"[Estoque]":f.cliente});
     }}/>
@@ -1952,7 +2003,12 @@ export default function App(){
   const salvarPedido=f=>{
     setDb(prev=>{
       if(modalPedido?.modo==="editar")return{...prev,pedidos:prev.pedidos.map(p=>p.id===f.id?f:p)};
-      const id=prev.nextId+1;return{...prev,nextId:id,pedidos:[...prev.pedidos,{...f,id}]};
+      const id=prev.nextId+1;
+      let produtos=prev.produtos;
+      if(f.vendaEstoque&&f.produtoEstoqueId){
+        produtos=prev.produtos.map(p=>p.id===f.produtoEstoqueId?{...p,qtd:Math.max(0,p.qtd-(f.qtd||1))}:p);
+      }
+      return{...prev,nextId:id,pedidos:[...prev.pedidos,{...f,id}],produtos};
     });
     setModalPedido(null);
   };
