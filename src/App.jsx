@@ -1753,7 +1753,7 @@ function Login({onLogin}){
       <div style={{background:"#fff",borderRadius:16,padding:"40px 36px",width:380,maxWidth:"95vw",
         boxShadow:"0 25px 60px rgba(0,0,0,0.35)"}}>
         <div style={{display:"flex",flexDirection:"column",alignItems:"center",marginBottom:28}}>
-          <div style={{width:64,height:64,borderRadius:14,background:"#111",display:"flex",
+          <div style={{width:64,height:64,borderRadius:14,background:"#fff",border:"1px solid #eee",display:"flex",
             alignItems:"center",justifyContent:"center",marginBottom:14,padding:8}}>
             <img src={LOGO_T11} alt="T11 Sports" style={{width:"100%",height:"100%",objectFit:"contain"}}/>
           </div>
@@ -1830,8 +1830,8 @@ function Sidebar({page,setPage,onLogout,open,onCloseMobile,escuro,setEscuro}){
       display:"flex",flexDirection:"column",height:"100vh",flexShrink:0,overflowY:"auto"}}>
       <div style={{padding:"14px 12px 12px",borderBottom:"1px solid #24212e"}}>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
-          <div style={{width:30,height:30,borderRadius:9,display:"flex",
-            alignItems:"center",justifyContent:"center",flexShrink:0}}>
+          <div style={{width:30,height:30,borderRadius:9,background:"#fff",display:"flex",
+            alignItems:"center",justifyContent:"center",flexShrink:0,padding:4}}>
             <img src={LOGO_T11} alt="T11 Sports" style={{width:"100%",height:"100%",objectFit:"contain"}}/>
           </div>
           <div style={{lineHeight:1.25,display:"flex",flexDirection:"column",justifyContent:"center",minWidth:0}}>
