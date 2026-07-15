@@ -93,7 +93,9 @@ function estoqueInicial(){
 }
 
 const DB0={produtos:[],pedidos:[],caixa:[],tarefas:[],pedidosFornecedor:[],
-  meta:{pedidos:30,receita:3600,lucro:1500,posts:0,futebol:0},nextId:100};
+  meta:{pedidos:30,receita:3600,lucro:1500,posts:0,futebol:0},
+  centralComando:{missao:"Conseguir pelo menos 1 venda hoje",proximaAcao:"Definir a próxima ação"},
+  nextId:100};
 
 // Mapeia status antigos para os status atuais do app, sem perder nenhum pedido
 const STATUS_MIGRACAO={
@@ -113,6 +115,7 @@ function migrarDB(db){
   out.tarefas=out.tarefas||[];
   out.pedidosFornecedor=out.pedidosFornecedor||[];
   out.meta={...DB0.meta,...(out.meta||{})};
+  out.centralComando={...DB0.centralComando,...(out.centralComando||{})};
   out.nextId=out.nextId||100;
   return out;
 }
@@ -538,6 +541,95 @@ function FormProduto({inicial,onSave,onClose}){
 }
 
 // ── DASHBOARD ────────────────────────────────────────────────
+// ── CENTRAL DE COMANDO — módulo de organização do dia (Dashboard) ──
+function CampoEditavel({valor,onSalvar,placeholder}){
+  const [editando,setEditando]=useState(false);
+  const [v,setV]=useState(valor);
+  useEffect(()=>{setV(valor);},[valor]);
+  const salvar=()=>{
+    const vv=v.trim();
+    if(vv&&vv!==valor)onSalvar(vv);
+    else setV(valor);
+    setEditando(false);
+  };
+  if(editando){
+    return(
+      <input autoFocus value={v} placeholder={placeholder}
+        onChange={e=>setV(e.target.value)}
+        onBlur={salvar}
+        onKeyDown={e=>{if(e.key==="Enter")salvar();if(e.key==="Escape"){setV(valor);setEditando(false);}}}
+        style={{width:"100%",background:"#2c2838",border:"1px solid #4a4558",borderRadius:6,
+          color:"#fff",fontSize:14,padding:"6px 8px",fontFamily:"inherit"}}/>
+    );
+  }
+  return(
+    <div onClick={()=>setEditando(true)} style={{display:"flex",alignItems:"center",gap:8,
+      cursor:"pointer"}} title="Clique para editar">
+      <span style={{fontSize:14,color:"#fff",flex:1}}>{valor}</span>
+      <span style={{opacity:0.5,flexShrink:0}}>
+        <Ico path={<><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></>} size={13} color="#a8a5b3"/>
+      </span>
+    </div>
+  );
+}
+function CentralComando({db,setDb,emTransp,atrasados,estoqueCritico,vendasSemana,metaSemana}){
+  const salvarCampo=(campo,valor)=>setDb(prev=>({...prev,centralComando:{...prev.centralComando,[campo]:valor}}));
+  const pSemana=metaSemana>0?Math.min(100,(vendasSemana/metaSemana)*100):0;
+  return(
+    <div style={{background:"#13111a",borderRadius:14,padding:"20px 24px"}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
+        <span style={{fontSize:15}}>🎯</span>
+        <span style={{fontSize:14,fontWeight:700,color:"#d4af37"}}>Central de Comando</span>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:12}}>
+        <div style={{background:"#1c1926",borderRadius:10,padding:"14px 16px",gridColumn:"1 / -1"}}>
+          <div style={{fontSize:11,color:"#a8a5b3",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.4px"}}>
+            🚩 Missão do dia
+          </div>
+          <CampoEditavel valor={db.centralComando.missao} placeholder="Qual sua prioridade hoje?"
+            onSalvar={v=>salvarCampo("missao",v)}/>
+        </div>
+        <div style={{background:"#1c1926",borderRadius:10,padding:"14px 16px"}}>
+          <div style={{fontSize:11,color:"#a8a5b3",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.4px"}}>
+            📌 Próxima ação
+          </div>
+          <CampoEditavel valor={db.centralComando.proximaAcao} placeholder="O que fazer agora?"
+            onSalvar={v=>salvarCampo("proximaAcao",v)}/>
+        </div>
+        <div style={{background:"#1c1926",borderRadius:10,padding:"14px 16px"}}>
+          <div style={{fontSize:11,color:"#a8a5b3",marginBottom:8,textTransform:"uppercase",letterSpacing:"0.4px"}}>
+            📦 Pendências
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:5}}>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:13}}>
+              <span style={{color:"#c9c6d3"}}>Em transporte</span>
+              <span style={{fontWeight:700,color:"#fff"}}>{emTransp}</span>
+            </div>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:13}}>
+              <span style={{color:"#c9c6d3"}}>Atrasados</span>
+              <span style={{fontWeight:700,color:atrasados>0?"#e05c5c":"#5cd680"}}>{atrasados}</span>
+            </div>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:13}}>
+              <span style={{color:"#c9c6d3"}}>Estoque crítico</span>
+              <span style={{fontWeight:700,color:estoqueCritico>0?"#e05c5c":"#5cd680"}}>{estoqueCritico}</span>
+            </div>
+          </div>
+        </div>
+        <div style={{background:"#1c1926",borderRadius:10,padding:"14px 16px",gridColumn:"1 / -1"}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+            <span style={{fontSize:11,color:"#a8a5b3",textTransform:"uppercase",letterSpacing:"0.4px"}}>
+              🏆 Meta da semana
+            </span>
+            <span style={{fontSize:13,fontWeight:700,color:"#fff"}}>{vendasSemana} / {metaSemana} vendas</span>
+          </div>
+          <div style={{width:"100%",height:6,background:"#2c2838",borderRadius:4,overflow:"hidden"}}>
+            <div style={{width:`${pSemana}%`,height:"100%",background:"#5c2030"}}/>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 function PageDashboard({db,setDb,onNavigate}){
   const [mesSel,setMesSel]=useState(mesAtual());
   const meses=useMemo(()=>{const s=new Set(db.pedidos.map(p=>p.data?.slice(0,7)).filter(Boolean));s.add(mesAtual());return[...s].sort().reverse();},[db.pedidos]);
@@ -565,6 +657,10 @@ function PageDashboard({db,setDb,onNavigate}){
     const nome=new Date(Number(ano),Number(mes)-1,1).toLocaleDateString("pt-BR",{month:"long",year:"numeric"});
     return nome.charAt(0).toUpperCase()+nome.slice(1);
   })();
+  const estoqueCritico=db.produtos.filter(p=>(p.qtd||0)<=1).length;
+  const inicioSemana=(()=>{const d=new Date();const dia=d.getDay();const diff=(dia===0?6:dia-1);d.setDate(d.getDate()-diff);return d.toISOString().slice(0,10);})();
+  const vendasSemana=db.pedidos.filter(p=>!isEstoque(p)&&p.data>=inicioSemana).length;
+  const metaSemana=db.meta.pedidos>0?Math.max(1,Math.round(db.meta.pedidos/4)):7;
   const metasAtivas=[
     {label:"Pedidos",atual:pm.length,meta:db.meta.pedidos,fmtFn:v=>String(v),color:"#2563eb"},
     {label:"Faturamento",atual:fat,meta:db.meta.receita,fmtFn:brl,color:"#16a34a"},
@@ -596,7 +692,8 @@ function PageDashboard({db,setDb,onNavigate}){
         </div>
       </div>
 
-
+      <CentralComando db={db} setDb={setDb} emTransp={emTransp} atrasados={atrasados}
+        estoqueCritico={estoqueCritico} vendasSemana={vendasSemana} metaSemana={metaSemana}/>
 
       {/* 4 KPIs operacionais — clicáveis, levam direto para Pedidos já filtrado */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:14}}>
