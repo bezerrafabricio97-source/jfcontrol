@@ -96,6 +96,11 @@ const DB0={produtos:[],pedidos:[],caixa:[],tarefas:[],pedidosFornecedor:[],
   meta:{pedidos:30,receita:3600,lucro:1500,posts:0,futebol:0},
   centralComando:{missao:"Conseguir pelo menos 1 venda hoje",
     filaAcoes:["Postar camisa do Bahia às 19h","Conferir pagamentos pendentes","Atualizar estoque"]},
+  // Índice segue Date.getDay(): 0=Domingo ... 6=Sábado.
+  // Guardado no db (não hardcoded no componente) pra poder virar editável no futuro
+  // sem precisar reescrever a tela — só trocar esses textos.
+  calendarioComercial:["Escolhas da Semana","Lançamentos (Bahia e Vitória)","Bahia","Vitória",
+    "Internacionais","Seleções","NBA + Retrôs"],
   nextId:100};
 
 // Mapeia status antigos para os status atuais do app, sem perder nenhum pedido
@@ -125,6 +130,9 @@ function migrarDB(db){
       ?[out.centralComando.proximaAcao]:[...DB0.centralComando.filaAcoes];
   }
   delete out.centralComando.proximaAcao;
+  if(!Array.isArray(out.calendarioComercial)||out.calendarioComercial.length!==7){
+    out.calendarioComercial=[...DB0.calendarioComercial];
+  }
   out.nextId=out.nextId||100;
   return out;
 }
@@ -692,6 +700,36 @@ function CentralComando({db,setDb,onNavigate,emTransp,atrasados,estoqueCritico,v
     </div>
   );
 }
+const DIAS_SEMANA=["Domingo","Segunda-feira","Terça-feira","Quarta-feira","Quinta-feira","Sexta-feira","Sábado"];
+// Card "Calendário Comercial" — hoje sempre em destaque, amanhã ao lado.
+// A programação vem de db.calendarioComercial (array de 7 posições, índice = Date.getDay()),
+// então dá pra plugar uma tela de edição futuramente sem tocar neste componente.
+function CalendarioComercial({db}){
+  const hojeIdx=new Date().getDay();
+  const amanhaIdx=(hojeIdx+1)%7;
+  const cal=db.calendarioComercial;
+  return(
+    <div style={{background:"#13111a",borderRadius:14,padding:"20px 24px"}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
+        <span style={{fontSize:15}}>📅</span>
+        <span style={{fontSize:14,fontWeight:700,color:"#d4af37"}}>Calendário Comercial</span>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:12}}>
+        <div style={{background:"#241a20",border:"1px solid #5c2030",borderRadius:10,
+          padding:"14px 16px",position:"relative"}}>
+          <span style={{position:"absolute",top:10,right:12,fontSize:9,background:"#5c2030",
+            color:"#f2c9d4",padding:"2px 8px",borderRadius:10,fontWeight:700,letterSpacing:"0.3px"}}>HOJE</span>
+          <div style={{fontSize:11,color:"#c9868b",marginBottom:6}}>{DIAS_SEMANA[hojeIdx]}</div>
+          <div style={{fontSize:15,fontWeight:600,color:"#fff"}}>{cal[hojeIdx]}</div>
+        </div>
+        <div style={{background:"#1c1926",borderRadius:10,padding:"14px 16px"}}>
+          <div style={{fontSize:11,color:"#a8a5b3",marginBottom:6}}>Amanhã · {DIAS_SEMANA[amanhaIdx]}</div>
+          <div style={{fontSize:15,fontWeight:500,color:"#c9c6d3"}}>{cal[amanhaIdx]}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
 function PageDashboard({db,setDb,onNavigate}){
   const [mesSel,setMesSel]=useState(mesAtual());
   const meses=useMemo(()=>{const s=new Set(db.pedidos.map(p=>p.data?.slice(0,7)).filter(Boolean));s.add(mesAtual());return[...s].sort().reverse();},[db.pedidos]);
@@ -756,6 +794,8 @@ function PageDashboard({db,setDb,onNavigate}){
 
       <CentralComando db={db} setDb={setDb} onNavigate={onNavigate} emTransp={emTransp} atrasados={atrasados}
         estoqueCritico={estoqueCritico} vendasSemana={vendasSemana} metaSemana={metaSemana}/>
+
+      <CalendarioComercial db={db}/>
 
       {/* 4 KPIs operacionais — clicáveis, levam direto para Pedidos já filtrado */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:14}}>
