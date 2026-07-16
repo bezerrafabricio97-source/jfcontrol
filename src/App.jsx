@@ -94,7 +94,8 @@ function estoqueInicial(){
 
 const DB0={produtos:[],pedidos:[],caixa:[],tarefas:[],pedidosFornecedor:[],
   meta:{pedidos:30,receita:3600,lucro:1500,posts:0,futebol:0},
-  centralComando:{missao:"Conseguir pelo menos 1 venda hoje",proximaAcao:"Definir a próxima ação"},
+  centralComando:{missao:"Conseguir pelo menos 1 venda hoje",
+    filaAcoes:["Postar camisa do Bahia às 19h","Conferir pagamentos pendentes","Atualizar estoque"]},
   nextId:100};
 
 // Mapeia status antigos para os status atuais do app, sem perder nenhum pedido
@@ -116,6 +117,14 @@ function migrarDB(db){
   out.pedidosFornecedor=out.pedidosFornecedor||[];
   out.meta={...DB0.meta,...(out.meta||{})};
   out.centralComando={...DB0.centralComando,...(out.centralComando||{})};
+  // Compat: quem já tinha "próxima ação" como texto único (versão anterior) migra
+  // automaticamente para a fila, sem perder o que já estava escrito. Só usa o valor
+  // padrão quando a fila nunca existiu — fila vazia por ter concluído tudo é válida.
+  if(!Array.isArray(out.centralComando.filaAcoes)){
+    out.centralComando.filaAcoes=out.centralComando.proximaAcao
+      ?[out.centralComando.proximaAcao]:[...DB0.centralComando.filaAcoes];
+  }
+  delete out.centralComando.proximaAcao;
   out.nextId=out.nextId||100;
   return out;
 }
@@ -572,9 +581,42 @@ function CampoEditavel({valor,onSalvar,placeholder}){
     </div>
   );
 }
-function CentralComando({db,setDb,emTransp,atrasados,estoqueCritico,vendasSemana,metaSemana}){
+// Resolve a mensagem de "Foco de Hoje" a partir da situação atual da operação.
+// Prioridade: atrasado > estoque crítico > em transporte > tudo em dia.
+// Extensível: no futuro dá pra entrar aqui cobranças pendentes, campanhas etc,
+// sem precisar mexer em nada do componente CentralComando.
+function resolverFocoHoje({atrasados,estoqueCritico,emTransp}){
+  if(atrasados>0)return{msg:`Resolver ${atrasados} pedido${atrasados>1?"s":""} atrasado${atrasados>1?"s":""} — tem cliente esperando`,cor:"#e05c5c",fundo:"#241a1e"};
+  if(estoqueCritico>0)return{msg:`Repor ${estoqueCritico} ite${estoqueCritico>1?"ns":"m"} de estoque crítico antes que perca uma venda`,cor:"#e6a23c",fundo:"#24201a"};
+  if(emTransp>0)return{msg:`Acompanhar ${emTransp} pedido${emTransp>1?"s":""} em transporte`,cor:"#7dd3c0",fundo:"#1a2422"};
+  return{msg:"Tudo em dia — hora de buscar novas vendas!",cor:"#5cd680",fundo:"#1a241d"};
+}
+function CentralComando({db,setDb,onNavigate,emTransp,atrasados,estoqueCritico,vendasSemana,metaSemana}){
   const salvarCampo=(campo,valor)=>setDb(prev=>({...prev,centralComando:{...prev.centralComando,[campo]:valor}}));
   const pSemana=metaSemana>0?Math.min(100,(vendasSemana/metaSemana)*100):0;
+  // Fila de próximas ações — hoje é editada manualmente aqui; no futuro pode ser
+  // alimentada (ou complementada) por tarefas do dia e eventos do calendário
+  // comercial, bastando ajustar esta lista antes de passá-la pro componente.
+  const filaAcoes=db.centralComando.filaAcoes||[];
+  const acaoAtual=filaAcoes[0]||"";
+  const concluirAcao=()=>setDb(prev=>({...prev,
+    centralComando:{...prev.centralComando,filaAcoes:(prev.centralComando.filaAcoes||[]).slice(1)}}));
+  const editarAcaoAtual=v=>setDb(prev=>{
+    const fila=[...(prev.centralComando.filaAcoes||[])];
+    if(fila.length)fila[0]=v;else fila.push(v);
+    return{...prev,centralComando:{...prev.centralComando,filaAcoes:fila}};
+  });
+  const foco=resolverFocoHoje({atrasados,estoqueCritico,emTransp});
+  const [hEmT,setHEmT]=useState(false);const [hAtr,setHAtr]=useState(false);const [hEst,setHEst]=useState(false);
+  const linhaPendencia=(label,valor,cor,hover,setHover,onClick)=>(
+    <div onClick={onClick} onMouseEnter={()=>setHover(true)} onMouseLeave={()=>setHover(false)}
+      style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:13,
+        padding:"5px 6px",borderRadius:6,cursor:"pointer",
+        background:hover?"#2c2838":"transparent",transition:"background 0.12s"}}>
+      <span style={{color:"#c9c6d3"}}>{label}</span>
+      <span style={{fontWeight:700,color:cor}}>{valor}{hover?" →":""}</span>
+    </div>
+  );
   return(
     <div style={{background:"#13111a",borderRadius:14,padding:"20px 24px"}}>
       <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
@@ -582,6 +624,17 @@ function CentralComando({db,setDb,emTransp,atrasados,estoqueCritico,vendasSemana
         <span style={{fontSize:14,fontWeight:700,color:"#d4af37"}}>Central de Comando</span>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:12}}>
+
+        {/* Foco de Hoje — mensagem automática de prioridade, calculada sozinha */}
+        <div style={{background:foco.fundo,borderLeft:`3px solid ${foco.cor}`,borderRadius:10,
+          padding:"12px 16px",gridColumn:"1 / -1",display:"flex",alignItems:"center",gap:10}}>
+          <span style={{fontSize:16,flexShrink:0}}>🧭</span>
+          <div>
+            <div style={{fontSize:11,color:"#a8a5b3",marginBottom:2}}>Foco de hoje</div>
+            <div style={{fontSize:14,color:"#fff",fontWeight:500}}>{foco.msg}</div>
+          </div>
+        </div>
+
         <div style={{background:"#1c1926",borderRadius:10,padding:"14px 16px",gridColumn:"1 / -1"}}>
           <div style={{fontSize:11,color:"#a8a5b3",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.4px"}}>
             🚩 Missão do dia
@@ -589,32 +642,41 @@ function CentralComando({db,setDb,emTransp,atrasados,estoqueCritico,vendasSemana
           <CampoEditavel valor={db.centralComando.missao} placeholder="Qual sua prioridade hoje?"
             onSalvar={v=>salvarCampo("missao",v)}/>
         </div>
+
         <div style={{background:"#1c1926",borderRadius:10,padding:"14px 16px"}}>
-          <div style={{fontSize:11,color:"#a8a5b3",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.4px"}}>
-            📌 Próxima ação
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
+            <div style={{display:"flex",alignItems:"center",gap:6}}>
+              <span style={{fontSize:11,color:"#a8a5b3",textTransform:"uppercase",letterSpacing:"0.4px"}}>
+                📌 Próxima ação
+              </span>
+            </div>
+            {filaAcoes.length>1&&<span style={{fontSize:10,color:"#6b6878"}}>+{filaAcoes.length-1} na fila</span>}
           </div>
-          <CampoEditavel valor={db.centralComando.proximaAcao} placeholder="O que fazer agora?"
-            onSalvar={v=>salvarCampo("proximaAcao",v)}/>
+          <CampoEditavel valor={acaoAtual} placeholder="O que fazer agora?"
+            onSalvar={editarAcaoAtual}/>
+          {filaAcoes.length>0&&
+            <button onClick={concluirAcao} style={{marginTop:10,background:"#274d3a",color:"#7ee0a8",
+              border:"none",borderRadius:6,padding:"5px 12px",fontSize:12,fontWeight:700,
+              cursor:"pointer",display:"inline-flex",alignItems:"center",gap:5}}>
+              <Ico path={<path d="M20 6L9 17l-5-5"/>} size={13} color="#7ee0a8"/> Concluir
+            </button>
+          }
         </div>
+
         <div style={{background:"#1c1926",borderRadius:10,padding:"14px 16px"}}>
           <div style={{fontSize:11,color:"#a8a5b3",marginBottom:8,textTransform:"uppercase",letterSpacing:"0.4px"}}>
             📦 Pendências
           </div>
-          <div style={{display:"flex",flexDirection:"column",gap:5}}>
-            <div style={{display:"flex",justifyContent:"space-between",fontSize:13}}>
-              <span style={{color:"#c9c6d3"}}>Em transporte</span>
-              <span style={{fontWeight:700,color:"#fff"}}>{emTransp}</span>
-            </div>
-            <div style={{display:"flex",justifyContent:"space-between",fontSize:13}}>
-              <span style={{color:"#c9c6d3"}}>Atrasados</span>
-              <span style={{fontWeight:700,color:atrasados>0?"#e05c5c":"#5cd680"}}>{atrasados}</span>
-            </div>
-            <div style={{display:"flex",justifyContent:"space-between",fontSize:13}}>
-              <span style={{color:"#c9c6d3"}}>Estoque crítico</span>
-              <span style={{fontWeight:700,color:estoqueCritico>0?"#e05c5c":"#5cd680"}}>{estoqueCritico}</span>
-            </div>
+          <div style={{display:"flex",flexDirection:"column",gap:1}}>
+            {linhaPendencia("Em transporte",emTransp,"#fff",hEmT,setHEmT,
+              ()=>onNavigate&&onNavigate("pedidos","Em Transporte",null))}
+            {linhaPendencia("Atrasados",atrasados,atrasados>0?"#e05c5c":"#5cd680",hAtr,setHAtr,
+              ()=>onNavigate&&onNavigate("pedidos","__atrasados__",null))}
+            {linhaPendencia("Estoque crítico",estoqueCritico,estoqueCritico>0?"#e05c5c":"#5cd680",hEst,setHEst,
+              ()=>onNavigate&&onNavigate("estoque",null,null))}
           </div>
         </div>
+
         <div style={{background:"#1c1926",borderRadius:10,padding:"14px 16px",gridColumn:"1 / -1"}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
             <span style={{fontSize:11,color:"#a8a5b3",textTransform:"uppercase",letterSpacing:"0.4px"}}>
@@ -692,7 +754,7 @@ function PageDashboard({db,setDb,onNavigate}){
         </div>
       </div>
 
-      <CentralComando db={db} setDb={setDb} emTransp={emTransp} atrasados={atrasados}
+      <CentralComando db={db} setDb={setDb} onNavigate={onNavigate} emTransp={emTransp} atrasados={atrasados}
         estoqueCritico={estoqueCritico} vendasSemana={vendasSemana} metaSemana={metaSemana}/>
 
       {/* 4 KPIs operacionais — clicáveis, levam direto para Pedidos já filtrado */}
