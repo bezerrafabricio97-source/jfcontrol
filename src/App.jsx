@@ -101,6 +101,9 @@ const DB0={produtos:[],pedidos:[],caixa:[],tarefas:[],pedidosFornecedor:[],
   // sem precisar reescrever a tela — só trocar esses textos.
   calendarioComercial:["Escolhas da Semana","Lançamentos (Bahia e Vitória)","Bahia","Vitória",
     "Internacionais","Seleções","NBA + Retrôs"],
+  // Check-in Diário: um registro por data (chave "YYYY-MM-DD"), guardado à parte
+  // pra poder virar base de gráficos/indicadores futuros sem migrar nada.
+  checkins:{},
   nextId:100};
 
 // Mapeia status antigos para os status atuais do app, sem perder nenhum pedido
@@ -133,6 +136,7 @@ function migrarDB(db){
   if(!Array.isArray(out.calendarioComercial)||out.calendarioComercial.length!==7){
     out.calendarioComercial=[...DB0.calendarioComercial];
   }
+  out.checkins=(out.checkins&&typeof out.checkins==="object"&&!Array.isArray(out.checkins))?out.checkins:{};
   out.nextId=out.nextId||100;
   return out;
 }
@@ -730,6 +734,171 @@ function CalendarioComercial({db}){
     </div>
   );
 }
+const ORIGENS_VENDA=["Grupo","Futebol","Indicação","Outro"];
+const CHECKIN_VAZIO={postagens:"",views:"",lead:"",clienteFidelizado:"",vendas:"",origemVenda:"Grupo",
+  pedidosTransporte:"",entradas:"",saidas:"",novosMembros:"",observacao:""};
+
+function CampoNum({label,value,onChange,auto}){
+  return(
+    <div style={{background:"#1c1926",borderRadius:8,padding:"9px 12px"}}>
+      <div style={{fontSize:11,color:"#a8a5b3",marginBottom:4}}>{label}</div>
+      <input type="number" min="0" value={value} placeholder="0"
+        onChange={e=>onChange(e.target.value)}
+        onFocus={e=>e.target.select()}
+        style={{width:"100%",background:"transparent",border:"none",outline:"none",
+          color:auto?"#7ee0a8":"#fff",fontSize:16,fontWeight:600,fontFamily:"inherit"}}/>
+    </div>
+  );
+}
+
+// Check-in Diário: registra em menos de 1 minuto os números do dia. Pedidos em
+// transporte e o financeiro (entradas/saídas) vêm pré-preenchidos com o que já
+// está registrado no sistema hoje — o usuário só confirma ou ajusta.
+function CheckinDiario({db,setDb}){
+  const hj=hoje();
+  const jaFeito=!!db.checkins[hj];
+
+  const calcularAuto=()=>{
+    const pedidosHoje=db.pedidos.filter(p=>!isEstoque(p)&&p.data===hj);
+    const vendas=pedidosHoje.length;
+    const pedidosTransporte=db.pedidos.filter(p=>p.status==="Em Transporte").length;
+    const entAuto=r(pedidosHoje.filter(p=>(p.valorRecebido||0)>0).reduce((a,p)=>a+(p.valorRecebido||0),0));
+    const entManual=r(db.caixa.filter(c=>c.tipo==="Entrada"&&c.data===hj).reduce((a,c)=>a+(c.valor||0),0));
+    const saidas=r(db.caixa.filter(c=>c.tipo==="Saída"&&c.data===hj).reduce((a,c)=>a+(c.valor||0),0));
+    return{vendas,pedidosTransporte,entradas:r(entAuto+entManual),saidas};
+  };
+
+  const [f,setF]=useState(()=>{
+    if(jaFeito)return{...CHECKIN_VAZIO,...db.checkins[hj]};
+    const auto=calcularAuto();
+    return{...CHECKIN_VAZIO,vendas:auto.vendas,pedidosTransporte:auto.pedidosTransporte,
+      entradas:auto.entradas,saidas:auto.saidas};
+  });
+  const [editando,setEditando]=useState(!jaFeito);
+
+  const n=(campo,v)=>setF(prev=>({...prev,[campo]:v}));
+  const saldo=r(Number(f.entradas||0)-Number(f.saidas||0));
+
+  const finalizar=()=>{
+    const registro={...f,saldo,criadoEm:new Date().toISOString()};
+    setDb(prev=>({...prev,checkins:{...prev.checkins,[hj]:registro}}));
+    setEditando(false);
+  };
+  const reabrirEdicao=()=>setEditando(true);
+
+  if(!editando&&jaFeito){
+    const c=db.checkins[hj];
+    return(
+      <div style={{background:"#13111a",borderRadius:14,padding:"20px 24px"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <span style={{fontSize:15}}>🌅</span>
+            <span style={{fontSize:14,fontWeight:700,color:"#d4af37"}}>Check-in Diário</span>
+          </div>
+          <button onClick={reabrirEdicao} style={{background:"transparent",border:"1px solid #4a4558",
+            color:"#c9c6d3",borderRadius:6,padding:"4px 12px",fontSize:12,cursor:"pointer"}}>Editar</button>
+        </div>
+        <div style={{fontSize:11,color:"#5cd680",marginBottom:14,marginLeft:26}}>✓ Concluído hoje</div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:10}}>
+          {[["Vendas",c.vendas],["Postagens",c.postagens],["Leads",c.lead],["Fidelizados",c.clienteFidelizado],
+            ["Em transporte",c.pedidosTransporte],["Entradas",brl(c.entradas)],["Saídas",brl(c.saidas)],
+            ["Saldo diário",brl(c.saldo)]].map(([lbl,val])=>(
+            <div key={lbl} style={{background:"#1c1926",borderRadius:8,padding:"8px 10px"}}>
+              <div style={{fontSize:10,color:"#a8a5b3",marginBottom:2}}>{lbl}</div>
+              <div style={{fontSize:14,fontWeight:700,color:"#fff"}}>{val||0}</div>
+            </div>
+          ))}
+        </div>
+        {c.observacao&&
+          <div style={{marginTop:10,fontSize:12,color:"#c9c6d3",fontStyle:"italic"}}>"{c.observacao}"</div>}
+      </div>
+    );
+  }
+
+  return(
+    <div style={{background:"#13111a",borderRadius:14,padding:"20px 24px"}}>
+      <div style={{marginBottom:14}}>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <span style={{fontSize:15}}>🌅</span>
+          <span style={{fontSize:14,fontWeight:700,color:"#d4af37"}}>Check-in Diário</span>
+        </div>
+        <div style={{fontSize:11,color:"#a8a5b3",marginTop:2,marginLeft:26}}>Leva menos de 1 minuto</div>
+      </div>
+
+      <div style={{display:"flex",flexDirection:"column",gap:14}}>
+
+        <div>
+          <div style={{fontSize:10,color:"#d4af37",textTransform:"uppercase",letterSpacing:"0.6px",
+            marginBottom:8,fontWeight:700}}>Comercial</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:8}}>
+            <CampoNum label="Postagens" value={f.postagens} onChange={v=>n("postagens",v)}/>
+            <CampoNum label="Views" value={f.views} onChange={v=>n("views",v)}/>
+            <CampoNum label="Vendas" value={f.vendas} onChange={v=>n("vendas",v)} auto/>
+            <CampoNum label="Lead" value={f.lead} onChange={v=>n("lead",v)}/>
+            <div style={{gridColumn:"span 2"}}>
+              <CampoNum label="Cliente fidelizado" value={f.clienteFidelizado} onChange={v=>n("clienteFidelizado",v)}/>
+            </div>
+          </div>
+          <div style={{marginTop:8}}>
+            <div style={{fontSize:11,color:"#a8a5b3",marginBottom:6}}>Origem da venda</div>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+              {ORIGENS_VENDA.map(o=>(
+                <span key={o} onClick={()=>n("origemVenda",o)} style={{
+                  background:f.origemVenda===o?"#5c2030":"#1c1926",
+                  color:f.origemVenda===o?"#fff":"#c9c6d3",fontSize:12,padding:"6px 14px",
+                  borderRadius:20,fontWeight:f.origemVenda===o?700:400,cursor:"pointer"}}>{o}</span>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8}}>
+            <span style={{fontSize:10,color:"#d4af37",textTransform:"uppercase",letterSpacing:"0.6px",
+              fontWeight:700}}>Operação</span>
+            <span style={{fontSize:9,background:"#1a2b20",color:"#7ee0a8",padding:"2px 7px",
+              borderRadius:8,fontWeight:700}}>✓ preenchido automático</span>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:8}}>
+            <CampoNum label="Pedidos em transporte" value={f.pedidosTransporte} onChange={v=>n("pedidosTransporte",v)} auto/>
+            <CampoNum label="Entradas do dia (R$)" value={f.entradas} onChange={v=>n("entradas",v)} auto/>
+            <CampoNum label="Saídas do dia (R$)" value={f.saidas} onChange={v=>n("saidas",v)} auto/>
+          </div>
+          <div style={{background:"#241a20",border:"1px solid #5c2030",borderRadius:8,padding:"9px 12px",
+            marginTop:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <span style={{fontSize:12,color:"#c9868b"}}>Saldo diário</span>
+            <span style={{fontSize:16,fontWeight:700,color:"#fff"}}>{brl(saldo)}</span>
+          </div>
+        </div>
+
+        <div>
+          <div style={{fontSize:10,color:"#d4af37",textTransform:"uppercase",letterSpacing:"0.6px",
+            marginBottom:8,fontWeight:700}}>Marketing</div>
+          <div style={{maxWidth:250}}>
+            <CampoNum label="Novos membros no grupo" value={f.novosMembros} onChange={v=>n("novosMembros",v)}/>
+          </div>
+        </div>
+
+        <div>
+          <div style={{fontSize:10,color:"#d4af37",textTransform:"uppercase",letterSpacing:"0.6px",
+            marginBottom:8,fontWeight:700}}>Observação</div>
+          <div style={{background:"#1c1926",borderRadius:8,padding:"9px 12px"}}>
+            <input value={f.observacao} placeholder="Ex: Cliente perguntou sobre pronta entrega"
+              onChange={e=>n("observacao",e.target.value)}
+              style={{width:"100%",background:"transparent",border:"none",outline:"none",
+                color:"#fff",fontSize:13,fontFamily:"inherit"}}/>
+          </div>
+        </div>
+
+        <button onClick={finalizar} style={{background:"#5c2030",color:"#fff",border:"none",
+          borderRadius:8,padding:11,fontSize:13,fontWeight:700,cursor:"pointer",display:"flex",
+          alignItems:"center",justifyContent:"center",gap:6,marginTop:4}}>
+          <Ico path={<path d="M20 6L9 17l-5-5"/>} size={15} color="#fff"/> Finalizar Check-in
+        </button>
+      </div>
+    </div>
+  );
+}
 function PageDashboard({db,setDb,onNavigate}){
   const [mesSel,setMesSel]=useState(mesAtual());
   const meses=useMemo(()=>{const s=new Set(db.pedidos.map(p=>p.data?.slice(0,7)).filter(Boolean));s.add(mesAtual());return[...s].sort().reverse();},[db.pedidos]);
@@ -796,6 +965,8 @@ function PageDashboard({db,setDb,onNavigate}){
         estoqueCritico={estoqueCritico} vendasSemana={vendasSemana} metaSemana={metaSemana}/>
 
       <CalendarioComercial db={db}/>
+
+      <CheckinDiario db={db} setDb={setDb}/>
 
       {/* 4 KPIs operacionais — clicáveis, levam direto para Pedidos já filtrado */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:14}}>
