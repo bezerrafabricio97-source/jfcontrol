@@ -115,6 +115,40 @@ const DB0={produtos:[],pedidos:[],caixa:[],tarefas:[],pedidosFornecedor:[],
   // Check-in Diário: um registro por data (chave "YYYY-MM-DD"), guardado à parte
   // pra poder virar base de gráficos/indicadores futuros sem migrar nada.
   checkins:{},
+  // Ecossistema: novas fontes de renda além das camisas, organizadas por projeto
+  // e etapas. "Camisas T11" fica registrada aqui só como referência (já ativa,
+  // é este próprio app) — as etapas de verdade são dos projetos novos.
+  ecossistema:{projetos:[
+    {id:1,nome:"Camisas T11 (atual)",
+      descricao:"Núcleo do negócio — venda de camisas de time. Já em operação através deste app, sem pendências aqui.",
+      status:"Ativo",etapas:[]},
+    {id:2,nome:"App SaaS — Sistema para Revendedores",
+      descricao:"Uma cópia do JFControl licenciada por mensalidade para outros lojistas que também vendem camisa de time.",
+      status:"Planejamento",etapas:[
+        {id:1,titulo:"Definir modelo de mensalidade e planos",feita:false},
+        {id:2,titulo:"Adaptar sistema para múltiplos clientes (multi-tenant)",feita:false},
+        {id:3,titulo:"Criar página de vendas do SaaS",feita:false},
+        {id:4,titulo:"Buscar clientes piloto",feita:false},
+        {id:5,titulo:"Lançar oficialmente",feita:false},
+      ]},
+    {id:3,nome:"Linha Casual (DTF)",
+      descricao:"Roupas casuais com estampa DTF com tema futebol — camisetas, moletons e afins.",
+      status:"Planejamento",etapas:[
+        {id:1,titulo:"Definir fornecedor de estampa DTF",feita:false},
+        {id:2,titulo:"Criar identidade visual da linha",feita:false},
+        {id:3,titulo:"Produzir lote piloto",feita:false},
+        {id:4,titulo:"Definir preço e catálogo inicial",feita:false},
+      ]},
+    {id:4,nome:"Marketing e Presença Digital",
+      descricao:"Estrutura de divulgação compartilhada entre o SaaS e a Linha Casual.",
+      status:"Planejamento",etapas:[
+        {id:1,titulo:"Criar site profissional",feita:false},
+        {id:2,titulo:"Criar perfil Instagram profissional",feita:false},
+        {id:3,titulo:"Criar perfil no TikTok",feita:false},
+        {id:4,titulo:"Rodar anúncios no Instagram",feita:false},
+        {id:5,titulo:"Rodar anúncios no TikTok",feita:false},
+      ]},
+  ]},
   nextId:100};
 
 // Mapeia status antigos para os status atuais do app, sem perder nenhum pedido
@@ -148,6 +182,7 @@ function migrarDB(db){
     out.calendarioComercial=[...DB0.calendarioComercial];
   }
   out.checkins=(out.checkins&&typeof out.checkins==="object"&&!Array.isArray(out.checkins))?out.checkins:{};
+  out.ecossistema=(out.ecossistema&&Array.isArray(out.ecossistema.projetos))?out.ecossistema:DB0.ecossistema;
   out.nextId=out.nextId||100;
   return out;
 }
@@ -915,9 +950,15 @@ function PageCentralWork({db,setDb,onNavigate}){
   const{emTransp,atrasados,estoqueCritico,vendasSemana,metaSemana}=calcularIndicadoresOperacionais(db);
   return(
     <div style={{display:"flex",flexDirection:"column",gap:16}}>
-      <div>
-        <div style={{fontSize:22,fontWeight:800,color:"#111"}}>Central Work</div>
-        <div style={{fontSize:13,color:"#9ca3af"}}>Seu ambiente de trabalho do dia a dia</div>
+      <div style={{display:"flex",alignItems:"center",gap:14}}>
+        <div style={{width:52,height:52,borderRadius:12,background:"#fff",border:"1px solid #eee",
+          display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,padding:6}}>
+          <img src={LOGO_T11_BOLA} alt="T11 Sports" style={{width:"100%",height:"100%",objectFit:"contain"}}/>
+        </div>
+        <div>
+          <div style={{fontSize:21,fontWeight:800,color:"#111"}}>Central</div>
+          <div style={{fontSize:13,color:"#9ca3af",marginTop:1}}>Seu ambiente de trabalho do dia a dia</div>
+        </div>
       </div>
       <CentralComando db={db} setDb={setDb} onNavigate={onNavigate} emTransp={emTransp} atrasados={atrasados}
         estoqueCritico={estoqueCritico} vendasSemana={vendasSemana} metaSemana={metaSemana}/>
@@ -2017,6 +2058,156 @@ function PageFornecedor({db,setDb}){
     </div>
   );
 }
+// ── ECOSSISTEMA — novas fontes de renda além das camisas ───────
+const STATUS_PROJETO=["Planejamento","Em Andamento","Ativo","Pausado"];
+const COR_STATUS_PROJETO={Planejamento:"#9ca3af",["Em Andamento"]:"#2563eb",Ativo:"#16a34a",Pausado:"#dc2626"};
+
+function CardProjeto({projeto,setDb,onDelete}){
+  const [novaEtapa,setNovaEtapa]=useState("");
+  const [editandoDesc,setEditandoDesc]=useState(false);
+  const [desc,setDesc]=useState(projeto.descricao);
+  const total=projeto.etapas.length;
+  const feitas=projeto.etapas.filter(e=>e.feita).length;
+  const prog=total>0?Math.round((feitas/total)*100):null;
+
+  const atualizar=patch=>setDb(prev=>({...prev,ecossistema:{...prev.ecossistema,
+    projetos:prev.ecossistema.projetos.map(p=>p.id===projeto.id?{...p,...patch}:p)}}));
+
+  const toggleEtapa=eid=>atualizar({etapas:projeto.etapas.map(e=>e.id===eid?{...e,feita:!e.feita}:e)});
+  const delEtapa=eid=>atualizar({etapas:projeto.etapas.filter(e=>e.id!==eid)});
+  const addEtapa=()=>{
+    if(!novaEtapa.trim())return;
+    const proxId=(projeto.etapas.reduce((m,e)=>Math.max(m,e.id),0)||0)+1;
+    atualizar({etapas:[...projeto.etapas,{id:proxId,titulo:novaEtapa.trim(),feita:false}]});
+    setNovaEtapa("");
+  };
+  const salvarDesc=()=>{atualizar({descricao:desc});setEditandoDesc(false);};
+
+  return(
+    <div style={{background:"#fff",border:"1px solid #e5e7eb",borderRadius:12,padding:"18px 20px"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,marginBottom:8}}>
+        <div style={{fontSize:16,fontWeight:800,color:"#111"}}>{projeto.nome}</div>
+        <div style={{display:"flex",gap:8,alignItems:"center",flexShrink:0}}>
+          <select value={projeto.status} onChange={e=>atualizar({status:e.target.value})}
+            style={{fontSize:11,fontWeight:700,color:COR_STATUS_PROJETO[projeto.status],
+              background:"#f9fafb",border:`1px solid ${COR_STATUS_PROJETO[projeto.status]}55`,
+              borderRadius:20,padding:"4px 10px",cursor:"pointer"}}>
+            {STATUS_PROJETO.map(s=><option key={s} value={s}>{s}</option>)}
+          </select>
+          <Btn v="danger" onClick={()=>onDelete(projeto.id)}>🗑</Btn>
+        </div>
+      </div>
+
+      {editandoDesc?(
+        <input autoFocus value={desc} onChange={e=>setDesc(e.target.value)}
+          onBlur={salvarDesc} onKeyDown={e=>{if(e.key==="Enter")salvarDesc();}}
+          style={{...INP,marginBottom:10}}/>
+      ):(
+        <div onClick={()=>setEditandoDesc(true)} style={{fontSize:13,color:"#6b7280",marginBottom:10,cursor:"pointer"}}>
+          {projeto.descricao||"Clique para adicionar uma descrição"}
+        </div>
+      )}
+
+      {prog!==null&&(
+        <div style={{marginBottom:12}}>
+          <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#9ca3af",marginBottom:4}}>
+            <span>Progresso</span><span>{feitas}/{total} etapas · {prog}%</span>
+          </div>
+          <div style={{height:6,background:"#f3f4f6",borderRadius:4,overflow:"hidden"}}>
+            <div style={{width:`${prog}%`,height:"100%",background:"#5c2030",transition:"width 0.3s"}}/>
+          </div>
+        </div>
+      )}
+
+      {total>0&&(
+        <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:10}}>
+          {projeto.etapas.map(e=>{
+            const [h,setH]=useState(false);
+            return(
+              <div key={e.id} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)}
+                style={{display:"flex",alignItems:"center",gap:10,padding:"6px 4px",borderRadius:6,
+                  background:h?"#f9fafb":"transparent"}}>
+                <button onClick={()=>toggleEtapa(e.id)} style={{width:18,height:18,borderRadius:5,
+                  border:`2px solid ${e.feita?"#16a34a":"#d1d5db"}`,background:e.feita?"#16a34a":"none",
+                  cursor:"pointer",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",
+                  color:"#fff",fontSize:11}}>{e.feita?"✓":""}</button>
+                <span style={{flex:1,fontSize:13,color:e.feita?"#9ca3af":"#374151",
+                  textDecoration:e.feita?"line-through":"none"}}>{e.titulo}</span>
+                {h&&<span onClick={()=>delEtapa(e.id)} style={{cursor:"pointer",color:"#d1d5db",fontSize:13}}>✕</span>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <div style={{display:"flex",gap:8}}>
+        <input value={novaEtapa} onChange={e=>setNovaEtapa(e.target.value)}
+          onKeyDown={e=>{if(e.key==="Enter")addEtapa();}}
+          placeholder="+ nova etapa" style={{...INP,fontSize:12,padding:"7px 10px"}}/>
+        <Btn v="sm" onClick={addEtapa}>Add</Btn>
+      </div>
+    </div>
+  );
+}
+
+function PageEcossistema({db,setDb}){
+  const [modal,setModal]=useState(false);
+  const [f,setF]=useState({nome:"",descricao:""});
+  const projetos=db.ecossistema.projetos;
+  const totalEtapas=projetos.reduce((a,p)=>a+p.etapas.length,0);
+  const etapasFeitas=projetos.reduce((a,p)=>a+p.etapas.filter(e=>e.feita).length,0);
+  const emAndamento=projetos.filter(p=>p.status==="Em Andamento"||p.status==="Ativo").length;
+
+  const addProjeto=()=>{
+    if(!f.nome.trim())return alert("Dê um nome ao projeto.");
+    setDb(prev=>{
+      const proxId=(prev.ecossistema.projetos.reduce((m,p)=>Math.max(m,p.id),0)||0)+1;
+      return{...prev,ecossistema:{...prev.ecossistema,projetos:[...prev.ecossistema.projetos,
+        {id:proxId,nome:f.nome.trim(),descricao:f.descricao.trim(),status:"Planejamento",etapas:[]}]}};
+    });
+    setF({nome:"",descricao:""});setModal(false);
+  };
+  const delProjeto=id=>{
+    if(!window.confirm("Excluir este projeto e todas as etapas dele?"))return;
+    setDb(prev=>({...prev,ecossistema:{...prev.ecossistema,
+      projetos:prev.ecossistema.projetos.filter(p=>p.id!==id)}}));
+  };
+
+  return(
+    <div>
+      <div style={{marginBottom:16}}>
+        <div style={{fontSize:22,fontWeight:800,color:"#111"}}>Ecossistema</div>
+        <div style={{fontSize:13,color:"#9ca3af"}}>Novas fontes de renda além das camisas</div>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:12,marginBottom:16}}>
+        <KPI label="Projetos" value={projetos.length} color="#111"/>
+        <KPI label="Em andamento / ativos" value={emAndamento} color="#2563eb"/>
+        <KPI label="Etapas concluídas" value={`${etapasFeitas}/${totalEtapas}`} color="#16a34a"/>
+      </div>
+
+      <div style={{display:"flex",justifyContent:"flex-end",marginBottom:16}}>
+        <Btn onClick={()=>setModal(true)}>+ Novo Projeto</Btn>
+      </div>
+
+      {projetos.length===0?<Empty msg="Nenhum projeto cadastrado ainda." icon="🚀"/>:(
+        <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:14}}>
+          {projetos.map(p=><CardProjeto key={p.id} projeto={p} setDb={setDb} onDelete={delProjeto}/>)}
+        </div>
+      )}
+
+      {modal&&<Modal title="Novo Projeto" onClose={()=>setModal(false)}>
+        <div style={{display:"flex",flexWrap:"wrap",gap:12}}>
+          <Field label="Nome do projeto"><Inp value={f.nome} onChange={e=>setF(p=>({...p,nome:e.target.value}))}
+            placeholder="ex: Loja de acessórios" autoFocus/></Field>
+          <Field label="Descrição (opcional)"><Inp value={f.descricao} onChange={e=>setF(p=>({...p,descricao:e.target.value}))}
+            placeholder="Do que se trata esse projeto?"/></Field>
+        </div>
+        <MBtns onClose={()=>setModal(false)} onSave={addProjeto}/>
+      </Modal>}
+    </div>
+  );
+}
 // ── ÍCONES (SVG inline, sem dependências) ──────────────────────
 function Ico({path,size=18,color="currentColor",strokeW=2}){
   return(
@@ -2053,6 +2244,7 @@ const MENU_EMOJI = {
   caixa:"🏦",
   tarefas:"✅",
   fornecedor:"🚚",
+  ecossistema:"🚀",
 };
 
 function MenuIco({k}){
@@ -2117,10 +2309,11 @@ function Login({onLogin}){
 
 // ── LAYOUT (Sidebar + Topbar) ──────────────────────────────────
 const MENU_PRINCIPAL=[
+  {k:"central_work",l:"Central",ico:"central_work"},
   {k:"dashboard",l:"Dashboard",ico:"dashboard"},
-  {k:"central_work",l:"Central Work",ico:"central_work"},
-  {k:"estoque",l:"Estoque",ico:"estoque"},
   {k:"pedidos",l:"Pedidos",ico:"pedidos"},
+  {k:"estoque",l:"Estoque",ico:"estoque"},
+  {k:"ecossistema",l:"Ecossistema",ico:"ecossistema"},
 ];
 const MENU_FINANCEIRO=[
   {k:"custo",l:"Custo / Lucro",ico:"custo"},
@@ -2211,8 +2404,8 @@ function Sidebar({page,setPage,onLogout,open,onCloseMobile,escuro,setEscuro}){
 }
 
 const PAGE_TITLES={
-  dashboard:"Dashboard", central_work:"Central Work", estoque:"Estoque", pedidos:"Pedidos",
-  custo:"Custo / Lucro", caixa:"Caixa", tarefas:"Tarefas", fornecedor:"Fornecedores",
+  dashboard:"Dashboard", central_work:"Central", estoque:"Estoque", pedidos:"Pedidos",
+  custo:"Custo / Lucro", caixa:"Caixa", tarefas:"Tarefas", fornecedor:"Fornecedores", ecossistema:"Ecossistema",
 };
 
 function Topbar({page,busca,setBusca,onRefresh,escuro}){
@@ -2364,6 +2557,7 @@ export default function App(){
       case "caixa": return <PageCaixa db={db} setDb={setDb}/>;
       case "tarefas": return <PageTarefas db={db} setDb={setDb}/>;
       case "fornecedor": return <PageFornecedor db={db} setDb={setDb}/>;
+      case "ecossistema": return <PageEcossistema db={db} setDb={setDb}/>;
       default: return null;
     }
   };
