@@ -66,6 +66,17 @@ function isAtrasado(p){
   const diff=(new Date()-new Date(p.data))/(1000*60*60*24);
   return diff>7;
 }
+// Indicadores operacionais usados tanto no Dashboard quanto no Central Work —
+// centralizados aqui pra não correr o risco dos dois lugares divergirem.
+function calcularIndicadoresOperacionais(db){
+  const emTransp=db.pedidos.filter(p=>p.status==="Em Transporte").length;
+  const atrasados=db.pedidos.filter(isAtrasado).length;
+  const estoqueCritico=db.produtos.filter(p=>(p.qtd||0)<=1).length;
+  const inicioSemana=(()=>{const d=new Date();const dia=d.getDay();const diff=(dia===0?6:dia-1);d.setDate(d.getDate()-diff);return d.toISOString().slice(0,10);})();
+  const vendasSemana=db.pedidos.filter(p=>!isEstoque(p)&&p.data>=inicioSemana).length;
+  const metaSemana=db.meta.pedidos>0?Math.max(1,Math.round(db.meta.pedidos/4)):7;
+  return{emTransp,atrasados,estoqueCritico,vendasSemana,metaSemana};
+}
 const fmtData=(d)=>{
   if(!d)return"—";
   const [ano,mes,dia]=d.split("-");
@@ -899,6 +910,22 @@ function CheckinDiario({db,setDb}){
     </div>
   );
 }
+// ── CENTRAL WORK — ambiente de trabalho diário, separado do Dashboard ──
+function PageCentralWork({db,setDb,onNavigate}){
+  const{emTransp,atrasados,estoqueCritico,vendasSemana,metaSemana}=calcularIndicadoresOperacionais(db);
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:16}}>
+      <div>
+        <div style={{fontSize:22,fontWeight:800,color:"#111"}}>Central Work</div>
+        <div style={{fontSize:13,color:"#9ca3af"}}>Seu ambiente de trabalho do dia a dia</div>
+      </div>
+      <CentralComando db={db} setDb={setDb} onNavigate={onNavigate} emTransp={emTransp} atrasados={atrasados}
+        estoqueCritico={estoqueCritico} vendasSemana={vendasSemana} metaSemana={metaSemana}/>
+      <CalendarioComercial db={db}/>
+      <CheckinDiario db={db} setDb={setDb}/>
+    </div>
+  );
+}
 function PageDashboard({db,setDb,onNavigate}){
   const [mesSel,setMesSel]=useState(mesAtual());
   const meses=useMemo(()=>{const s=new Set(db.pedidos.map(p=>p.data?.slice(0,7)).filter(Boolean));s.add(mesAtual());return[...s].sort().reverse();},[db.pedidos]);
@@ -912,9 +939,7 @@ function PageDashboard({db,setDb,onNavigate}){
   const margAtual=receb>0?r(((receb-cus)/receb)*100):null;
   const baixos=db.produtos.filter(isBaixo);
   const produzir=db.pedidos.filter(p=>p.status==="A Fazer"&&!isEstoque(p)).length;
-  const emTransp=db.pedidos.filter(p=>p.status==="Em Transporte").length;
   const entregue=db.pedidos.filter(p=>p.status==="Entregue"&&p.data?.startsWith(mesSel)).length;
-  const atrasados=db.pedidos.filter(isAtrasado).length;
   const tarefasHj=db.tarefas.filter(t=>!t.feita&&t.data===hoje()).length;
   const vendas={};db.pedidos.forEach(p=>{const k=`${p.time||p.camisa} ${p.tamanho}`;vendas[k]=(vendas[k]||0)+(p.qtd||1);});
   const topVendas=Object.entries(vendas).sort((a,b)=>b[1]-a[1]).slice(0,5);
@@ -926,10 +951,7 @@ function PageDashboard({db,setDb,onNavigate}){
     const nome=new Date(Number(ano),Number(mes)-1,1).toLocaleDateString("pt-BR",{month:"long",year:"numeric"});
     return nome.charAt(0).toUpperCase()+nome.slice(1);
   })();
-  const estoqueCritico=db.produtos.filter(p=>(p.qtd||0)<=1).length;
-  const inicioSemana=(()=>{const d=new Date();const dia=d.getDay();const diff=(dia===0?6:dia-1);d.setDate(d.getDate()-diff);return d.toISOString().slice(0,10);})();
-  const vendasSemana=db.pedidos.filter(p=>!isEstoque(p)&&p.data>=inicioSemana).length;
-  const metaSemana=db.meta.pedidos>0?Math.max(1,Math.round(db.meta.pedidos/4)):7;
+  const{emTransp,atrasados}=calcularIndicadoresOperacionais(db);
   const metasAtivas=[
     {label:"Pedidos",atual:pm.length,meta:db.meta.pedidos,fmtFn:v=>String(v),color:"#2563eb"},
     {label:"Faturamento",atual:fat,meta:db.meta.receita,fmtFn:brl,color:"#16a34a"},
@@ -960,13 +982,6 @@ function PageDashboard({db,setDb,onNavigate}){
           <div style={{fontSize:26,fontWeight:800,color:"#fff",letterSpacing:"-1px",lineHeight:1}}>{hora}</div>
         </div>
       </div>
-
-      <CentralComando db={db} setDb={setDb} onNavigate={onNavigate} emTransp={emTransp} atrasados={atrasados}
-        estoqueCritico={estoqueCritico} vendasSemana={vendasSemana} metaSemana={metaSemana}/>
-
-      <CalendarioComercial db={db}/>
-
-      <CheckinDiario db={db} setDb={setDb}/>
 
       {/* 4 KPIs operacionais — clicáveis, levam direto para Pedidos já filtrado */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:14}}>
@@ -1564,59 +1579,6 @@ function PagePedidos({db,onAdd,onEdit,onDelete,onUpdateMeta,statusInicial,mesIni
 }
 
 // ── GESTÃO KANBAN ─────────────────────────────────────────────
-function PageGestao({db,onEdit,onAdd}){
-  const [filtro,setFiltro]=useState("mes");
-  const m=mesAtual();const hj=hoje();const sw=semIni();const mp=mesPrev();
-  const FILTROS=[{k:"hoje",l:"Hoje"},{k:"semana",l:"Esta semana"},{k:"mes",l:"Este mês"},{k:"mes_ant",l:"Mês passado"},{k:"todos",l:"Todos"}];
-  const filtrados=db.pedidos.filter(p=>{
-    if(filtro==="hoje")return p.data===hj;if(filtro==="semana")return p.data>=sw;
-    if(filtro==="mes_ant")return p.data?.startsWith(mp);if(filtro==="todos")return true;
-    return p.data?.startsWith(m);
-  });
-  return(
-    <div>
-      <div style={{marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-        <div><div style={{fontSize:22,fontWeight:800,color:"#111"}}>Gestão de Pedidos</div><div style={{fontSize:13,color:"#9ca3af"}}>Esteira de produção e envio</div></div>
-        <Btn onClick={onAdd}>+ Pedido</Btn>
-      </div>
-      <div style={{marginBottom:16}}><Tabs options={FILTROS} value={filtro} onChange={setFiltro}/></div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:16}}>
-        {KANBAN.map(col=>{
-          const peds=filtrados.filter(p=>p.status===col.key);
-          return(
-            <div key={col.key}>
-              <div style={{background:col.color,borderRadius:"10px 10px 0 0",padding:"12px 16px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-                <div style={{fontSize:12,fontWeight:800,color:"#fff",letterSpacing:"1px"}}>{col.icon} {col.label}</div>
-                <span style={{background:"rgba(255,255,255,0.25)",color:"#fff",borderRadius:20,padding:"2px 10px",fontSize:12,fontWeight:800}}>{peds.length}</span>
-              </div>
-              <div style={{background:"#f9fafb",border:"1px solid #e5e7eb",borderTop:"none",borderRadius:"0 0 10px 10px",padding:12,minHeight:200,display:"flex",flexDirection:"column",gap:8}}>
-                {peds.length===0?<div style={{textAlign:"center",color:"#d1d5db",fontSize:13,padding:"20px 0"}}>Nenhum pedido</div>:(
-                  peds.map(p=>{
-                    const v=r((p.precoVenda||0)*(p.qtd||1));const sb=r(v-(p.valorRecebido||0));
-                    const [h,setH]=useState(false);
-                    return(
-                      <div key={p.id} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)} onClick={()=>onEdit(p)}
-                        style={{background:"#fff",border:"1px solid #e5e7eb",borderRadius:8,padding:"12px 14px",cursor:"pointer",transition:"all 0.15s",transform:h?"translateY(-1px)":"none",boxShadow:h?"0 4px 12px rgba(0,0,0,0.1)":"0 1px 3px rgba(0,0,0,0.05)"}}>
-                        <div style={{fontWeight:700,fontSize:13,color:"#111",marginBottom:4}}>{p.cliente}</div>
-                        <div style={{fontSize:12,color:"#6b7280",marginBottom:6}}>{p.time} {p.uniforme&&`(${p.uniforme})`} · {p.tamanho} · {p.qtd||1}un</div>
-                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                          <span style={{fontWeight:800,fontSize:13,color:"#111"}}>{brl(v)}</span>
-                          {sb>0&&<span style={{fontSize:11,color:"#dc2626",fontWeight:700}}>⏳ {brl(sb)}</span>}
-                        </div>
-                        {p.data&&<div style={{fontSize:10,color:"#d1d5db",marginTop:4}}>{fmtData(p.data)}</div>}
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 // ── CUSTO/LUCRO ───────────────────────────────────────────────
 function PageCusto({db,setDb}){
   const [filtro,setFiltro]=useState("mes");const [modalD,setModalD]=useState(false);
@@ -1662,14 +1624,14 @@ function PageCusto({db,setDb}){
       </div>
       <div style={{marginBottom:16}}><Tabs options={FILTROS} value={filtro} onChange={setFiltro}/></div>
 
-      {/* KPIs principais */}
+      {/* KPIs principais — margem real primeiro, é o que já entrou de fato */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(5,minmax(0,1fr))",gap:12,marginBottom:16}}>
         <KPI label="💰 Faturamento" value={brl(recTotal)} color="#111"/>
         <KPI label="✅ Recebido" value={brl(recebido)} color="#16a34a"/>
         <KPI label="⏳ A Receber" value={brl(aReceber)} color={aReceber>0?"#ca8a04":"#16a34a"}/>
-        <KPI label="📊 Margem Projetada" value={`${marg.toFixed(1)}%`} color={marg>=30?"#16a34a":marg>=15?"#ca8a04":"#dc2626"}/>
-        <KPI label="📈 Margem Atual" value={margAtual===null?"—":`${margAtual.toFixed(1)}%`}
+        <KPI label="📈 Margem Real" value={margAtual===null?"—":`${margAtual.toFixed(1)}%`}
           color={margAtual===null?"#9ca3af":margAtual>=30?"#16a34a":margAtual>=15?"#ca8a04":"#dc2626"}/>
+        <KPI label="📊 Margem Projetada" value={`${marg.toFixed(1)}%`} color={marg>=30?"#16a34a":marg>=15?"#ca8a04":"#dc2626"}/>
       </div>
 
       {/* Resumo financeiro */}
@@ -1689,12 +1651,12 @@ function PageCusto({db,setDb}){
         ))}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",
           padding:"14px 0",borderTop:"2px solid #e5e7eb",marginTop:4}}>
-          <span style={{fontSize:15,fontWeight:800,color:"#111"}}>🎯 Lucro Líquido Projetado</span>
-          <span style={{fontSize:20,fontWeight:900,color:lucLiq>=0?"#16a34a":"#dc2626"}}>{brl(lucLiq)}</span>
+          <span style={{fontSize:15,fontWeight:800,color:"#111"}}>📈 Lucro Líquido Real</span>
+          <span style={{fontSize:20,fontWeight:900,color:lucLiqAtual>=0?"#16a34a":"#dc2626"}}>{brl(lucLiqAtual)}</span>
         </div>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0"}}>
-          <span style={{fontSize:13,fontWeight:700,color:"#6b7280"}}>📈 Lucro Líquido Atual</span>
-          <span style={{fontSize:16,fontWeight:800,color:lucLiqAtual>=0?"#16a34a":"#dc2626"}}>{brl(lucLiqAtual)}</span>
+          <span style={{fontSize:13,fontWeight:700,color:"#6b7280"}}>🎯 Lucro Líquido Projetado</span>
+          <span style={{fontSize:16,fontWeight:800,color:lucLiq>=0?"#16a34a":"#dc2626"}}>{brl(lucLiq)}</span>
         </div>
       </Section>
 
@@ -2083,6 +2045,7 @@ const ICONS = {
 
 const MENU_EMOJI = {
   dashboard:"📊",
+  central_work:"🧭",
   estoque:"📦",
   pedidos:"🛒",
   gestao:"📋",
@@ -2155,9 +2118,9 @@ function Login({onLogin}){
 // ── LAYOUT (Sidebar + Topbar) ──────────────────────────────────
 const MENU_PRINCIPAL=[
   {k:"dashboard",l:"Dashboard",ico:"dashboard"},
+  {k:"central_work",l:"Central Work",ico:"central_work"},
   {k:"estoque",l:"Estoque",ico:"estoque"},
   {k:"pedidos",l:"Pedidos",ico:"pedidos"},
-  {k:"gestao",l:"Gestão",ico:"gestao"},
 ];
 const MENU_FINANCEIRO=[
   {k:"custo",l:"Custo / Lucro",ico:"custo"},
@@ -2248,7 +2211,7 @@ function Sidebar({page,setPage,onLogout,open,onCloseMobile,escuro,setEscuro}){
 }
 
 const PAGE_TITLES={
-  dashboard:"Dashboard", estoque:"Estoque", pedidos:"Pedidos", gestao:"Gestão",
+  dashboard:"Dashboard", central_work:"Central Work", estoque:"Estoque", pedidos:"Pedidos",
   custo:"Custo / Lucro", caixa:"Caixa", tarefas:"Tarefas", fornecedor:"Fornecedores",
 };
 
@@ -2394,9 +2357,9 @@ export default function App(){
   const renderPage=()=>{
     switch(page){
       case "dashboard": return <PageDashboard db={db} setDb={setDb} onNavigate={navegarPara}/>;
+      case "central_work": return <PageCentralWork db={db} setDb={setDb} onNavigate={navegarPara}/>;
       case "estoque": return <PageEstoque db={db} onAdd={addProduto} onEdit={editProduto} onDelete={delProduto}/>;
       case "pedidos": return <PagePedidos db={db} onAdd={addPedido} onEdit={editPedido} onDelete={delPedido} onUpdateMeta={updateMeta} statusInicial={statusFiltroPedidos} mesInicial={mesFiltroPedidos}/>;
-      case "gestao": return <PageGestao db={db} onEdit={editPedido} onAdd={addPedido}/>;
       case "custo": return <PageCusto db={db} setDb={setDb}/>;
       case "caixa": return <PageCaixa db={db} setDb={setDb}/>;
       case "tarefas": return <PageTarefas db={db} setDb={setDb}/>;
