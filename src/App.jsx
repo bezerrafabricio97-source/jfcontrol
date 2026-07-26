@@ -36,6 +36,29 @@ const ST_FORN = ["Lista de Espera","Pedido Feito","Chegou - Estoque","Chegou - V
 const CATS_DESP = ["Produto / Estoque","Taxa / Importação","Ferramenta / Software","Frete","Outros"];
 const CATS_REC = ["Venda","Aporte de Sócio","Outros"];
 const CATS_TAR = ["Pedido","Estoque","Financeiro","Cliente","Outro"];
+// ── WORK (antiga "Tarefas") — categorias, urgência e status do centro operacional ──
+const CATEGORIAS_WORK = ["Marketing","Operacional","Financeiro","Estoque","Aplicativo","Conteúdo","Compras"];
+const URGENCIAS_WORK = ["Crítica","Alta","Média","Baixa"];
+const STATUS_WORK = ["Pendente","Em Andamento","Concluído","Cancelado"];
+const ORDEM_URGENCIA_WORK = {"Crítica":0,"Alta":1,"Média":2,"Baixa":3};
+const COR_URGENCIA_WORK = {"Crítica":"#dc2626","Alta":"#ea580c","Média":"#ca8a04","Baixa":"#9ca3af"};
+const COR_STATUS_WORK = {"Pendente":"#9ca3af","Em Andamento":"#2563eb","Concluído":"#16a34a","Cancelado":"#d1d5db"};
+// Compat: categorias da antiga tela "Tarefas" (Pedido/Estoque/Financeiro/Cliente/Outro)
+// migram pro novo conjunto de categorias do Work.
+const MAP_CATEGORIA_TAREFA_ANTIGA={Pedido:"Operacional",Estoque:"Estoque",Financeiro:"Financeiro",
+  Cliente:"Operacional",Outro:"Operacional"};
+// Uma tarefa "merece atenção" na Central quando é urgente (Alta/Crítica) e ainda
+// está pendente. Concluída ou de baixa urgência não aparece lá — ela só aparece no Work.
+function tarefaMereceAtencao(t){
+  return(t.urgencia==="Alta"||t.urgencia==="Crítica")&&t.status==="Pendente";
+}
+function ordenarTarefasPorPrioridade(lista){
+  return[...lista].sort((a,b)=>{
+    const u=(ORDEM_URGENCIA_WORK[a.urgencia]??2)-(ORDEM_URGENCIA_WORK[b.urgencia]??2);
+    if(u!==0)return u;
+    return(a.prazo||"9999-99-99").localeCompare(b.prazo||"9999-99-99");
+  });
+}
 const KANBAN = [
   {key:"A Fazer",label:"PRODUZIR",icon:"📦",color:"#f97316"},
   {key:"Pedido Feito",label:"ENTREGAR",icon:"✈️",color:"#2563eb"},
@@ -166,7 +189,20 @@ function migrarDB(db){
     status: ST_PEDIDO.includes(p.status) ? p.status : (STATUS_MIGRACAO[p.status]||"A Fazer"),
   }));
   out.caixa=out.caixa||[];
-  out.tarefas=out.tarefas||[];
+  // Migra tarefas do formato antigo (feita/prioridade/data) pro novo modelo do Work
+  // (status/urgência/prazo/categoria/responsável). Tarefa que já está no formato novo
+  // (tem status válido) não é tocada de novo.
+  out.tarefas=(out.tarefas||[]).map(t=>{
+    if(STATUS_WORK.includes(t.status))return t;
+    return{
+      id:t.id,titulo:t.titulo||"",descricao:t.descricao||"",
+      categoria:MAP_CATEGORIA_TAREFA_ANTIGA[t.categoria]||"Operacional",
+      urgencia:t.prioridade==="Alta"?"Alta":t.prioridade==="Baixa"?"Baixa":"Média",
+      prazo:t.data||hoje(),
+      status:t.feita?"Concluído":"Pendente",
+      responsavel:t.responsavel||"",
+    };
+  });
   out.pedidosFornecedor=out.pedidosFornecedor||[];
   out.meta={...DB0.meta,...(out.meta||{})};
   out.centralComando={...DB0.centralComando,...(out.centralComando||{})};
@@ -652,18 +688,12 @@ function resolverFocoHoje({atrasados,estoqueCritico,emTransp}){
 function CentralComando({db,setDb,onNavigate,emTransp,atrasados,estoqueCritico,vendasSemana,metaSemana}){
   const salvarCampo=(campo,valor)=>setDb(prev=>({...prev,centralComando:{...prev.centralComando,[campo]:valor}}));
   const pSemana=metaSemana>0?Math.min(100,(vendasSemana/metaSemana)*100):0;
-  // Fila de próximas ações — hoje é editada manualmente aqui; no futuro pode ser
-  // alimentada (ou complementada) por tarefas do dia e eventos do calendário
-  // comercial, bastando ajustar esta lista antes de passá-la pro componente.
-  const filaAcoes=db.centralComando.filaAcoes||[];
-  const acaoAtual=filaAcoes[0]||"";
-  const concluirAcao=()=>setDb(prev=>({...prev,
-    centralComando:{...prev.centralComando,filaAcoes:(prev.centralComando.filaAcoes||[]).slice(1)}}));
-  const editarAcaoAtual=v=>setDb(prev=>{
-    const fila=[...(prev.centralComando.filaAcoes||[])];
-    if(fila.length)fila[0]=v;else fila.push(v);
-    return{...prev,centralComando:{...prev.centralComando,filaAcoes:fila}};
-  });
+  // Prioridades puxadas automaticamente do Work: urgência Alta/Crítica + Pendente.
+  // Concluída ou de baixa urgência não aparece aqui — só no Work. Não se cadastra
+  // nada nesta tela; ela só reflete o que já está lançado lá.
+  const tarefasUrgentes=ordenarTarefasPorPrioridade(db.tarefas.filter(tarefaMereceAtencao));
+  const concluirTarefa=id=>setDb(prev=>({...prev,
+    tarefas:prev.tarefas.map(t=>t.id===id?{...t,status:"Concluído"}:t)}));
   const foco=resolverFocoHoje({atrasados,estoqueCritico,emTransp});
   const [hEmT,setHEmT]=useState(false);const [hAtr,setHAtr]=useState(false);const [hEst,setHEst]=useState(false);
   const linhaPendencia=(label,valor,cor,hover,setHover,onClick)=>(
@@ -676,7 +706,7 @@ function CentralComando({db,setDb,onNavigate,emTransp,atrasados,estoqueCritico,v
     </div>
   );
   return(
-    <div style={{background:"#13111a",borderRadius:14,padding:"20px 24px"}}>
+    <div style={{background:"#1D1A28",borderRadius:14,padding:"20px 24px"}}>
       <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
         <span style={{fontSize:15}}>🎯</span>
         <span style={{fontSize:14,fontWeight:700,color:"#d4af37"}}>Central de Comando</span>
@@ -693,7 +723,7 @@ function CentralComando({db,setDb,onNavigate,emTransp,atrasados,estoqueCritico,v
           </div>
         </div>
 
-        <div style={{background:"#1c1926",borderRadius:10,padding:"14px 16px",gridColumn:"1 / -1"}}>
+        <div style={{background:"#262233",borderRadius:10,padding:"14px 16px",gridColumn:"1 / -1"}}>
           <div style={{fontSize:11,color:"#a8a5b3",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.4px"}}>
             🚩 Missão do dia
           </div>
@@ -701,31 +731,39 @@ function CentralComando({db,setDb,onNavigate,emTransp,atrasados,estoqueCritico,v
             onSalvar={v=>salvarCampo("missao",v)}/>
         </div>
 
-        <div style={{background:"#1c1926",borderRadius:10,padding:"14px 16px"}}>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
-            <div style={{display:"flex",alignItems:"center",gap:6}}>
-              <span style={{fontSize:11,color:"#a8a5b3",textTransform:"uppercase",letterSpacing:"0.4px"}}>
-                📌 Próxima ação
-              </span>
-            </div>
-            {filaAcoes.length>1&&<span style={{fontSize:10,color:"#6b6878"}}>+{filaAcoes.length-1} na fila</span>}
+        <div style={{background:"#262233",borderRadius:10,padding:"14px 16px",gridColumn:"1 / -1"}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8,
+            cursor:"pointer"}} onClick={()=>onNavigate&&onNavigate("tarefas")}>
+            <span style={{fontSize:11,color:"#a8a5b3",textTransform:"uppercase",letterSpacing:"0.4px"}}>
+              📌 Prioridades do Work
+            </span>
+            {tarefasUrgentes.length>0&&<span style={{fontSize:10,color:"#6b6878"}}>ver tudo →</span>}
           </div>
-          <CampoEditavel valor={acaoAtual} placeholder="O que fazer agora?"
-            onSalvar={editarAcaoAtual}/>
-          {filaAcoes.length>0&&
-            <button onClick={concluirAcao} style={{marginTop:10,background:"#274d3a",color:"#7ee0a8",
-              border:"none",borderRadius:6,padding:"5px 12px",fontSize:12,fontWeight:700,
-              cursor:"pointer",display:"inline-flex",alignItems:"center",gap:5}}>
-              <Ico path={<path d="M20 6L9 17l-5-5"/>} size={13} color="#7ee0a8"/> Concluir
-            </button>
-          }
+          {tarefasUrgentes.length===0?(
+            <div style={{fontSize:13,color:"#5cd680"}}>✓ Nenhuma tarefa urgente agora</div>
+          ):(
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              {tarefasUrgentes.slice(0,4).map(t=>(
+                <div key={t.id} style={{display:"flex",alignItems:"center",gap:8}}>
+                  <span style={{width:6,height:6,borderRadius:"50%",flexShrink:0,
+                    background:COR_URGENCIA_WORK[t.urgencia]}}/>
+                  <span style={{flex:1,fontSize:13,color:"#fff"}}>{t.titulo}</span>
+                  <button onClick={()=>concluirTarefa(t.id)} style={{background:"#274d3a",color:"#7ee0a8",
+                    border:"none",borderRadius:5,padding:"3px 9px",fontSize:11,fontWeight:700,
+                    cursor:"pointer",flexShrink:0}}>✓</button>
+                </div>
+              ))}
+              {tarefasUrgentes.length>4&&
+                <div style={{fontSize:11,color:"#6b6878"}}>+{tarefasUrgentes.length-4} outra{tarefasUrgentes.length-4>1?"s":""} no Work</div>}
+            </div>
+          )}
         </div>
 
-        <div style={{background:"#1c1926",borderRadius:10,padding:"14px 16px"}}>
+        <div style={{background:"#262233",borderRadius:10,padding:"14px 16px",gridColumn:"1 / -1"}}>
           <div style={{fontSize:11,color:"#a8a5b3",marginBottom:8,textTransform:"uppercase",letterSpacing:"0.4px"}}>
             📦 Pendências
           </div>
-          <div style={{display:"flex",flexDirection:"column",gap:1}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:4}}>
             {linhaPendencia("Em transporte",emTransp,"#fff",hEmT,setHEmT,
               ()=>onNavigate&&onNavigate("pedidos","Em Transporte",null))}
             {linhaPendencia("Atrasados",atrasados,atrasados>0?"#e05c5c":"#5cd680",hAtr,setHAtr,
@@ -735,7 +773,7 @@ function CentralComando({db,setDb,onNavigate,emTransp,atrasados,estoqueCritico,v
           </div>
         </div>
 
-        <div style={{background:"#1c1926",borderRadius:10,padding:"14px 16px",gridColumn:"1 / -1"}}>
+        <div style={{background:"#262233",borderRadius:10,padding:"14px 16px",gridColumn:"1 / -1"}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
             <span style={{fontSize:11,color:"#a8a5b3",textTransform:"uppercase",letterSpacing:"0.4px"}}>
               🏆 Meta da semana
@@ -759,7 +797,7 @@ function CalendarioComercial({db}){
   const amanhaIdx=(hojeIdx+1)%7;
   const cal=db.calendarioComercial;
   return(
-    <div style={{background:"#13111a",borderRadius:14,padding:"20px 24px"}}>
+    <div style={{background:"#1D1A28",borderRadius:14,padding:"20px 24px"}}>
       <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
         <span style={{fontSize:15}}>📅</span>
         <span style={{fontSize:14,fontWeight:700,color:"#d4af37"}}>Calendário Comercial</span>
@@ -772,7 +810,7 @@ function CalendarioComercial({db}){
           <div style={{fontSize:11,color:"#c9868b",marginBottom:6}}>{DIAS_SEMANA[hojeIdx]}</div>
           <div style={{fontSize:15,fontWeight:600,color:"#fff"}}>{cal[hojeIdx]}</div>
         </div>
-        <div style={{background:"#1c1926",borderRadius:10,padding:"14px 16px"}}>
+        <div style={{background:"#262233",borderRadius:10,padding:"14px 16px"}}>
           <div style={{fontSize:11,color:"#a8a5b3",marginBottom:6}}>Amanhã · {DIAS_SEMANA[amanhaIdx]}</div>
           <div style={{fontSize:15,fontWeight:500,color:"#c9c6d3"}}>{cal[amanhaIdx]}</div>
         </div>
@@ -786,7 +824,7 @@ const CHECKIN_VAZIO={postagens:"",views:"",lead:"",clienteFidelizado:"",vendas:"
 
 function CampoNum({label,value,onChange,auto}){
   return(
-    <div style={{background:"#1c1926",borderRadius:8,padding:"9px 12px"}}>
+    <div style={{background:"#262233",borderRadius:8,padding:"9px 12px"}}>
       <div style={{fontSize:11,color:"#a8a5b3",marginBottom:4}}>{label}</div>
       <input type="number" min="0" value={value} placeholder="0"
         onChange={e=>onChange(e.target.value)}
@@ -835,7 +873,7 @@ function CheckinDiario({db,setDb}){
   if(!editando&&jaFeito){
     const c=db.checkins[hj];
     return(
-      <div style={{background:"#13111a",borderRadius:14,padding:"20px 24px"}}>
+      <div style={{background:"#1D1A28",borderRadius:14,padding:"20px 24px"}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
             <span style={{fontSize:15}}>🌅</span>
@@ -849,7 +887,7 @@ function CheckinDiario({db,setDb}){
           {[["Vendas",c.vendas],["Postagens",c.postagens],["Leads",c.lead],["Fidelizados",c.clienteFidelizado],
             ["Em transporte",c.pedidosTransporte],["Entradas",brl(c.entradas)],["Saídas",brl(c.saidas)],
             ["Saldo diário",brl(c.saldo)]].map(([lbl,val])=>(
-            <div key={lbl} style={{background:"#1c1926",borderRadius:8,padding:"8px 10px"}}>
+            <div key={lbl} style={{background:"#262233",borderRadius:8,padding:"8px 10px"}}>
               <div style={{fontSize:10,color:"#a8a5b3",marginBottom:2}}>{lbl}</div>
               <div style={{fontSize:14,fontWeight:700,color:"#fff"}}>{val||0}</div>
             </div>
@@ -862,7 +900,7 @@ function CheckinDiario({db,setDb}){
   }
 
   return(
-    <div style={{background:"#13111a",borderRadius:14,padding:"20px 24px"}}>
+    <div style={{background:"#1D1A28",borderRadius:14,padding:"20px 24px"}}>
       <div style={{marginBottom:14}}>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
           <span style={{fontSize:15}}>🌅</span>
@@ -928,7 +966,7 @@ function CheckinDiario({db,setDb}){
         <div>
           <div style={{fontSize:10,color:"#d4af37",textTransform:"uppercase",letterSpacing:"0.6px",
             marginBottom:8,fontWeight:700}}>Observação</div>
-          <div style={{background:"#1c1926",borderRadius:8,padding:"9px 12px"}}>
+          <div style={{background:"#262233",borderRadius:8,padding:"9px 12px"}}>
             <input value={f.observacao} placeholder="Ex: Cliente perguntou sobre pronta entrega"
               onChange={e=>n("observacao",e.target.value)}
               style={{width:"100%",background:"transparent",border:"none",outline:"none",
@@ -949,16 +987,13 @@ function CheckinDiario({db,setDb}){
 function PageCentralWork({db,setDb,onNavigate}){
   const{emTransp,atrasados,estoqueCritico,vendasSemana,metaSemana}=calcularIndicadoresOperacionais(db);
   return(
-    <div style={{display:"flex",flexDirection:"column",gap:16}}>
-      <div style={{display:"flex",alignItems:"center",gap:14}}>
-        <div style={{width:52,height:52,borderRadius:12,background:"#fff",border:"1px solid #eee",
-          display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,padding:6}}>
+    <div style={{display:"flex",flexDirection:"column",gap:10}}>
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:2}}>
+        <div style={{width:30,height:30,borderRadius:8,background:"#fff",border:"1px solid #eee",
+          display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,padding:3}}>
           <img src={LOGO_T11_BOLA} alt="T11 Sports" style={{width:"100%",height:"100%",objectFit:"contain"}}/>
         </div>
-        <div>
-          <div style={{fontSize:21,fontWeight:800,color:"#111"}}>Central</div>
-          <div style={{fontSize:13,color:"#9ca3af",marginTop:1}}>Seu ambiente de trabalho do dia a dia</div>
-        </div>
+        <div style={{fontSize:13,color:"#9ca3af"}}>Seu ambiente de trabalho do dia a dia</div>
       </div>
       <CentralComando db={db} setDb={setDb} onNavigate={onNavigate} emTransp={emTransp} atrasados={atrasados}
         estoqueCritico={estoqueCritico} vendasSemana={vendasSemana} metaSemana={metaSemana}/>
@@ -1003,7 +1038,7 @@ function PageDashboard({db,setDb,onNavigate}){
   return(
     <div style={{display:"flex",flexDirection:"column",gap:16}}>
       {/* Hero */}
-      <div style={{background:"linear-gradient(135deg,#0f0f0f 0%,#1a1a2e 100%)",borderRadius:14,
+      <div style={{background:"linear-gradient(135deg,#17151F 0%,#1D1A28 100%)",borderRadius:14,
         padding:"24px 32px",display:"flex",justifyContent:"space-between",alignItems:"center",
         boxShadow:"0 4px 24px rgba(0,0,0,0.2)"}}>
         <div>
@@ -1918,61 +1953,134 @@ function PageCaixa({db,setDb}){
 }
 
 // ── TAREFAS ──────────────────────────────────────────────────
-function PageTarefas({db,setDb}){
-  const [modal,setModal]=useState(false);const [aba,setAba]=useState("hoje");
-  const [f,setF]=useState({titulo:"",descricao:"",data:hoje(),prioridade:"Normal",categoria:"Outro",feita:false});
-  const hj=hoje();const sw=semIni();const fw=semFim();
-  const lista=db.tarefas.filter(t=>aba==="hoje"?t.data===hj&&!t.feita:aba==="semana"?t.data>=sw&&t.data<=fw:aba==="feitas"?t.feita:true);
-  const hjCnt=db.tarefas.filter(t=>t.data===hj&&!t.feita).length;
-  const fCnt=db.tarefas.filter(t=>t.feita).length;
-  const pCnt=db.tarefas.filter(t=>!t.feita).length;
-  const fSem=db.tarefas.filter(t=>t.data>=sw&&t.data<=fw&&t.feita).length;
-  const tSem=db.tarefas.filter(t=>t.data>=sw&&t.data<=fw).length;
-  const prog=tSem>0?Math.round((fSem/tSem)*100):0;
-  const salv=()=>{if(!f.titulo.trim())return alert("Informe o título.");setDb(prev=>{const id=prev.nextId+1;return{...prev,nextId:id,tarefas:[...prev.tarefas,{...f,id}]};});setF({titulo:"",descricao:"",data:hj,prioridade:"Normal",categoria:"Outro",feita:false});setModal(false);};
-  const toggle=id=>setDb(prev=>({...prev,tarefas:prev.tarefas.map(t=>t.id===id?{...t,feita:!t.feita}:t)}));
-  const del=id=>{if(!window.confirm("Excluir?"))return;setDb(prev=>({...prev,tarefas:prev.tarefas.filter(t=>t.id!==id)}));};
-  const priC={Alta:"#dc2626",Normal:"#111",Baixa:"#9ca3af"};
-  const ABAS=[{k:"hoje",l:`Hoje (${hjCnt})`},{k:"semana",l:"Semana"},{k:"todas",l:"Todas"},{k:"feitas",l:`Feitas (${fCnt})`}];
+// ── WORK (antiga "Tarefas") — centro operacional da empresa ────
+function LinhaTarefaWork({t,onToggle,onStatus,onDelete}){
+  const [h,setH]=useState(false);
+  const atrasada=t.status!=="Concluído"&&t.status!=="Cancelado"&&t.prazo&&t.prazo<hoje();
+  const feita=t.status==="Concluído";
   return(
-    <div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:12,marginBottom:16}}>
-        <KPI label="Hoje" value={hjCnt} color={hjCnt>0?"#dc2626":"#16a34a"}/>
-        <KPI label="Pendentes" value={pCnt} color={pCnt>0?"#ca8a04":"#16a34a"}/>
-        <KPI label="Concluídas" value={fCnt} color="#16a34a"/>
-      </div>
-      <div style={{background:"#111",borderRadius:12,padding:"18px 22px",marginBottom:16}}>
-        <div style={{fontWeight:800,fontSize:14,color:"#fff",marginBottom:12}}>📋 Relatório Semanal</div>
-        <div style={{display:"flex",gap:24,alignItems:"center"}}>
-          <div style={{textAlign:"center"}}><div style={{fontSize:22,fontWeight:800,color:"#fff"}}>{fSem}</div><div style={{fontSize:11,color:"rgba(255,255,255,0.35)",marginTop:2}}>FEITAS</div></div>
-          <div style={{textAlign:"center"}}><div style={{fontSize:22,fontWeight:800,color:"#fbbf24"}}>{tSem-fSem}</div><div style={{fontSize:11,color:"rgba(255,255,255,0.35)",marginTop:2}}>PENDENTES</div></div>
-          <div style={{flex:1}}><div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"rgba(255,255,255,0.35)",marginBottom:4}}><span>Progresso semanal</span><span>{prog}%</span></div><div style={{height:8,background:"rgba(255,255,255,0.1)",borderRadius:4}}><div style={{width:`${prog}%`,height:"100%",background:prog>=70?"#4ade80":"#fbbf24",borderRadius:4,transition:"width 0.5s"}}/></div></div>
+    <div onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)}
+      style={{display:"flex",alignItems:"flex-start",gap:12,padding:14,
+        border:`1px solid ${h?"#d1d5db":"#e5e7eb"}`,
+        borderLeft:`4px solid ${feita?"#d1d5db":COR_URGENCIA_WORK[t.urgencia]||"#111"}`,
+        borderRadius:10,background:feita?"#fafafa":"#fff",opacity:t.status==="Cancelado"?0.5:1,
+        transition:"all 0.15s"}}>
+      <button onClick={()=>onToggle(t.id)} style={{width:22,height:22,borderRadius:6,
+        border:`2px solid ${feita?"#16a34a":"#d1d5db"}`,background:feita?"#16a34a":"none",
+        cursor:"pointer",flexShrink:0,marginTop:1,display:"flex",alignItems:"center",
+        justifyContent:"center",color:"#fff",fontSize:12}}>{feita?"✓":""}</button>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontWeight:700,fontSize:14,color:"#111",
+          textDecoration:feita?"line-through":"none"}}>{t.titulo}</div>
+        {t.descricao&&<div style={{fontSize:12,color:"#9ca3af",marginTop:3}}>{t.descricao}</div>}
+        <div style={{display:"flex",gap:10,marginTop:6,flexWrap:"wrap",alignItems:"center"}}>
+          <span style={{fontSize:11,color:COR_URGENCIA_WORK[t.urgencia],fontWeight:700}}>● {t.urgencia}</span>
+          {t.prazo&&<span style={{fontSize:11,color:atrasada?"#dc2626":"#9ca3af",fontWeight:atrasada?700:400}}>
+            📅 {fmtData(t.prazo)}{atrasada?" · atrasada":""}</span>}
+          {t.responsavel&&<span style={{fontSize:11,color:"#9ca3af"}}>👤 {t.responsavel}</span>}
         </div>
       </div>
-      <Section action={<div style={{display:"flex",gap:8,alignItems:"center"}}><Tabs options={ABAS} value={aba} onChange={setAba}/><Btn onClick={()=>setModal(true)}>+ Tarefa</Btn></div>}>
-        {lista.length===0?<Empty msg="Nenhuma tarefa nesta aba." icon="📋"/>:(
-          <div style={{display:"flex",flexDirection:"column",gap:8}}>
-            {lista.sort((a,b)=>({Alta:0,Normal:1,Baixa:2}[a.prioridade]||1)-({Alta:0,Normal:1,Baixa:2}[b.prioridade]||1)).map(t=>{
-              const [h,setH]=useState(false);
+      <select value={t.status} onChange={e=>onStatus(t.id,e.target.value)}
+        style={{fontSize:11,fontWeight:700,color:COR_STATUS_WORK[t.status],background:"#f9fafb",
+          border:`1px solid ${COR_STATUS_WORK[t.status]}55`,borderRadius:20,padding:"4px 8px",
+          cursor:"pointer",flexShrink:0}}>
+        {STATUS_WORK.map(s=><option key={s} value={s}>{s}</option>)}
+      </select>
+      <Btn v="danger" onClick={()=>onDelete(t.id)}>✕</Btn>
+    </div>
+  );
+}
+
+function PageTarefas({db,setDb}){
+  const [modal,setModal]=useState(false);
+  const [abaStatus,setAbaStatus]=useState("todas");
+  const [catFiltro,setCatFiltro]=useState("Todas");
+  const vazio={titulo:"",descricao:"",categoria:"Operacional",urgencia:"Média",prazo:"",
+    status:"Pendente",responsavel:""};
+  const [f,setF]=useState(vazio);
+  const hj=hoje();
+
+  const pendentesUrgentes=db.tarefas.filter(tarefaMereceAtencao).length;
+  const atrasadas=db.tarefas.filter(t=>t.status!=="Concluído"&&t.status!=="Cancelado"&&t.prazo&&t.prazo<hj).length;
+  const emAndamento=db.tarefas.filter(t=>t.status==="Em Andamento").length;
+  const concluidas=db.tarefas.filter(t=>t.status==="Concluído").length;
+
+  const ABAS=[
+    {k:"todas",l:`Todas (${db.tarefas.length})`},
+    {k:"Pendente",l:`Pendentes (${db.tarefas.filter(t=>t.status==="Pendente").length})`},
+    {k:"Em Andamento",l:`Em andamento (${emAndamento})`},
+    {k:"Concluído",l:`Concluídas (${concluidas})`},
+    {k:"Cancelado",l:"Canceladas"},
+  ];
+
+  const filtradas=db.tarefas.filter(t=>
+    (abaStatus==="todas"||t.status===abaStatus)&&(catFiltro==="Todas"||t.categoria===catFiltro));
+
+  const salv=()=>{
+    if(!f.titulo.trim())return alert("Informe o título.");
+    setDb(prev=>{const id=prev.nextId+1;return{...prev,nextId:id,tarefas:[...prev.tarefas,{...f,id}]};});
+    setF(vazio);setModal(false);
+  };
+  const toggle=id=>setDb(prev=>({...prev,tarefas:prev.tarefas.map(t=>
+    t.id===id?{...t,status:t.status==="Concluído"?"Pendente":"Concluído"}:t)}));
+  const mudarStatus=(id,status)=>setDb(prev=>({...prev,tarefas:prev.tarefas.map(t=>t.id===id?{...t,status}:t)}));
+  const del=id=>{if(!window.confirm("Excluir?"))return;setDb(prev=>({...prev,tarefas:prev.tarefas.filter(t=>t.id!==id)}));};
+
+  return(
+    <div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:12,marginBottom:16}}>
+        <KPI label="Urgentes pendentes" value={pendentesUrgentes} color={pendentesUrgentes>0?"#dc2626":"#16a34a"}/>
+        <KPI label="Atrasadas" value={atrasadas} color={atrasadas>0?"#dc2626":"#16a34a"}/>
+        <KPI label="Em andamento" value={emAndamento} color="#2563eb"/>
+        <KPI label="Concluídas" value={concluidas} color="#16a34a"/>
+      </div>
+
+      <Section action={
+        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+          <div style={{width:170}}>
+            <Sel value={catFiltro} onChange={e=>setCatFiltro(e.target.value)}>
+              <option value="Todas">Todas as categorias</option>
+              {CATEGORIAS_WORK.map(c=><option key={c} value={c}>{c}</option>)}
+            </Sel>
+          </div>
+          <Tabs options={ABAS} value={abaStatus} onChange={setAbaStatus}/>
+          <Btn onClick={()=>setModal(true)}>+ Atividade</Btn>
+        </div>
+      }>
+        {filtradas.length===0?<Empty msg="Nenhuma atividade por aqui." icon="💻"/>:(
+          <div style={{display:"flex",flexDirection:"column",gap:20}}>
+            {CATEGORIAS_WORK.map(cat=>{
+              const doGrupo=ordenarTarefasPorPrioridade(filtradas.filter(t=>t.categoria===cat));
+              if(doGrupo.length===0)return null;
               return(
-                <div key={t.id} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)}
-                  style={{display:"flex",alignItems:"flex-start",gap:12,padding:14,border:`1px solid ${h?"#d1d5db":"#e5e7eb"}`,borderLeft:`4px solid ${t.feita?"#d1d5db":priC[t.prioridade]||"#111"}`,borderRadius:10,background:t.feita?"#fafafa":"#fff",opacity:t.feita?0.6:1,transition:"all 0.15s",transform:h&&!t.feita?"translateX(2px)":"none"}}>
-                  <button onClick={()=>toggle(t.id)} style={{width:22,height:22,borderRadius:6,border:`2px solid ${t.feita?"#16a34a":"#d1d5db"}`,background:t.feita?"#16a34a":"none",cursor:"pointer",flexShrink:0,marginTop:1,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:12}}>{t.feita?"✓":""}</button>
-                  <div style={{flex:1}}><div style={{fontWeight:700,fontSize:14,color:"#111",textDecoration:t.feita?"line-through":"none"}}>{t.titulo}</div>{t.descricao&&<div style={{fontSize:12,color:"#9ca3af",marginTop:3}}>{t.descricao}</div>}<div style={{display:"flex",gap:10,marginTop:6,flexWrap:"wrap"}}><span style={{fontSize:11,color:"#9ca3af"}}>📅 {t.data}</span><span style={{fontSize:11,color:priC[t.prioridade]||"#111",fontWeight:700}}>● {t.prioridade}</span><span style={{fontSize:11,color:"#9ca3af"}}>{t.categoria}</span></div></div>
-                  <Btn v="danger" onClick={()=>del(t.id)}>✕</Btn>
+                <div key={cat}>
+                  <div style={{fontSize:12,fontWeight:800,color:"#6b7280",textTransform:"uppercase",
+                    letterSpacing:"0.5px",marginBottom:8}}>{cat} <span style={{color:"#d1d5db"}}>({doGrupo.length})</span></div>
+                  <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                    {doGrupo.map(t=><LinhaTarefaWork key={t.id} t={t} onToggle={toggle} onStatus={mudarStatus} onDelete={del}/>)}
+                  </div>
                 </div>
               );
             })}
           </div>
         )}
       </Section>
-      {modal&&<Modal title="Nova Tarefa" onClose={()=>setModal(false)}>
+
+      {modal&&<Modal title="Nova Atividade" onClose={()=>setModal(false)}>
         <div style={{display:"flex",flexWrap:"wrap",gap:12}}>
-          <Field label="Título"><Inp value={f.titulo} onChange={e=>setF(p=>({...p,titulo:e.target.value}))} placeholder="O que precisa fazer?" autoFocus/></Field>
-          <Field label="Descrição"><Inp value={f.descricao} onChange={e=>setF(p=>({...p,descricao:e.target.value}))} placeholder="Detalhes (opcional)"/></Field>
-          <Field label="Data" third><Inp type="date" value={f.data} onChange={e=>setF(p=>({...p,data:e.target.value}))}/></Field>
-          <Field label="Prioridade" third><Sel value={f.prioridade} onChange={e=>setF(p=>({...p,prioridade:e.target.value}))}>{["Alta","Normal","Baixa"].map(p=><option key={p}>{p}</option>)}</Sel></Field>
-          <Field label="Categoria" third><Sel value={f.categoria} onChange={e=>setF(p=>({...p,categoria:e.target.value}))}>{CATS_TAR.map(c=><option key={c}>{c}</option>)}</Sel></Field>
+          <Field label="Título"><Inp value={f.titulo} onChange={e=>setF(p=>({...p,titulo:e.target.value}))}
+            placeholder="O que precisa fazer?" autoFocus/></Field>
+          <Field label="Descrição"><Inp value={f.descricao} onChange={e=>setF(p=>({...p,descricao:e.target.value}))}
+            placeholder="Detalhes (opcional)"/></Field>
+          <Field label="Categoria" third><Sel value={f.categoria} onChange={e=>setF(p=>({...p,categoria:e.target.value}))}>
+            {CATEGORIAS_WORK.map(c=><option key={c}>{c}</option>)}</Sel></Field>
+          <Field label="Urgência" third><Sel value={f.urgencia} onChange={e=>setF(p=>({...p,urgencia:e.target.value}))}>
+            {URGENCIAS_WORK.map(u=><option key={u}>{u}</option>)}</Sel></Field>
+          <Field label="Prazo" third><Inp type="date" value={f.prazo} onChange={e=>setF(p=>({...p,prazo:e.target.value}))}/></Field>
+          <Field label="Status" half><Sel value={f.status} onChange={e=>setF(p=>({...p,status:e.target.value}))}>
+            {STATUS_WORK.map(s=><option key={s}>{s}</option>)}</Sel></Field>
+          <Field label="Responsável (em breve)" half><Inp value={f.responsavel}
+            onChange={e=>setF(p=>({...p,responsavel:e.target.value}))} placeholder="Ainda de uso pessoal"/></Field>
         </div>
         <MBtns onClose={()=>setModal(false)} onSave={salv}/>
       </Modal>}
@@ -2242,7 +2350,7 @@ const MENU_EMOJI = {
   gestao:"📋",
   custo:"💰",
   caixa:"🏦",
-  tarefas:"✅",
+  tarefas:"💻",
   fornecedor:"🚚",
   ecossistema:"🚀",
 };
@@ -2313,14 +2421,14 @@ const MENU_PRINCIPAL=[
   {k:"dashboard",l:"Dashboard",ico:"dashboard"},
   {k:"pedidos",l:"Pedidos",ico:"pedidos"},
   {k:"estoque",l:"Estoque",ico:"estoque"},
-  {k:"ecossistema",l:"Ecossistema",ico:"ecossistema"},
 ];
 const MENU_FINANCEIRO=[
   {k:"custo",l:"Custo / Lucro",ico:"custo"},
   {k:"caixa",l:"Caixa",ico:"caixa"},
 ];
 const MENU_GESTAO=[
-  {k:"tarefas",l:"Tarefas",ico:"tarefas"},
+  {k:"tarefas",l:"Work",ico:"tarefas"},
+  {k:"ecossistema",l:"Ecossistema",ico:"ecossistema"},
 ];
 
 function MenuItem({item,active,onClick,escuro}){
@@ -2332,7 +2440,7 @@ function MenuItem({item,active,onClick,escuro}){
   const txt = active ? "#fff" : "#c4c1cc";
   return(
     <div onClick={onClick} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)}
-      style={{display:"flex",alignItems:"center",gap:9,padding:"7px 12px",cursor:"pointer",
+      style={{display:"flex",alignItems:"center",gap:9,padding:"6px 12px",cursor:"pointer",
         borderRadius:8,margin:"1px 8px",background:bg,transition:"all 0.15s"}}>
       <MenuIco k={item.ico} active={active}/>
       <span style={{fontSize:12.5,fontWeight:active?700:500,color:txt,whiteSpace:"nowrap",
@@ -2343,7 +2451,7 @@ function MenuItem({item,active,onClick,escuro}){
 
 function MenuLabel({children}){
   return<div style={{fontSize:9.5,fontWeight:800,color:"#6b6877",textTransform:"uppercase",
-    letterSpacing:"0.6px",padding:"9px 14px 4px"}}>{children}</div>;
+    letterSpacing:"0.6px",padding:"7px 14px 3px"}}>{children}</div>;
 }
 
 function Sidebar({page,setPage,onLogout,open,onCloseMobile,escuro,setEscuro}){
@@ -2352,18 +2460,18 @@ function Sidebar({page,setPage,onLogout,open,onCloseMobile,escuro,setEscuro}){
   // A barra lateral é sempre escura — identidade fixa do app, não depende do
   // Modo Escuro (que afeta só o conteúdo da direita).
   return(
-    <div style={{width:172,minWidth:172,background:"#13111a",borderRight:"1px solid #24212e",
+    <div style={{width:172,minWidth:172,background:"#17151F",borderRight:"1px solid #24212e",
       display:"flex",flexDirection:"column",height:"100vh",flexShrink:0,overflowY:"auto"}}>
-      <div style={{padding:"14px 12px 12px",borderBottom:"1px solid #24212e"}}>
+      <div style={{padding:"12px 12px 10px",borderBottom:"1px solid #24212e"}}>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
-          <div style={{lineHeight:1.25,display:"flex",flexDirection:"column",justifyContent:"center",minWidth:0}}>
+          <div style={{lineHeight:1.2,display:"flex",flexDirection:"column",justifyContent:"center",minWidth:0}}>
             <div style={{fontSize:13,fontWeight:700,color:"#fff",letterSpacing:"-0.2px"}}>T11 Sports</div>
             <div style={{fontSize:8,fontWeight:700,color:"#d4af37",letterSpacing:"0.6px",
               textTransform:"uppercase"}}>Gestão da Loja</div>
           </div>
         </div>
       </div>
-      <div style={{flex:1,overflowY:"auto",padding:"4px 0"}}>
+      <div style={{flex:1,padding:"4px 0"}}>
         <MenuLabel>Principal</MenuLabel>
         {MENU_PRINCIPAL.map(it=><MenuItem key={it.k} item={it} active={page===it.k} onClick={()=>ir(it.k)}/>)}
         <MenuLabel>Financeiro</MenuLabel>
@@ -2371,8 +2479,8 @@ function Sidebar({page,setPage,onLogout,open,onCloseMobile,escuro,setEscuro}){
         <MenuLabel>Gestão</MenuLabel>
         {MENU_GESTAO.map(it=><MenuItem key={it.k} item={it} active={page===it.k} onClick={()=>ir(it.k)}/>)}
         <div onClick={()=>setEscuro(e=>!e)} onMouseEnter={()=>setHDark(true)} onMouseLeave={()=>setHDark(false)}
-          style={{display:"flex",alignItems:"center",gap:9,padding:"9px 12px",cursor:"pointer",
-            borderRadius:8,margin:"8px 8px 2px",
+          style={{display:"flex",alignItems:"center",gap:9,padding:"7px 12px",cursor:"pointer",
+            borderRadius:8,margin:"6px 8px 2px",
             background:hDark?"rgba(255,255,255,0.08)":"transparent",transition:"all 0.15s"}}>
           <span style={{fontSize:15,width:16,display:"inline-flex",justifyContent:"center"}}>🌙</span>
           <span style={{fontSize:12.5,fontWeight:500,color:"#c4c1cc",flex:1}}>Modo Escuro</span>
@@ -2383,7 +2491,7 @@ function Sidebar({page,setPage,onLogout,open,onCloseMobile,escuro,setEscuro}){
           </div>
         </div>
       </div>
-      <div style={{borderTop:"1px solid #24212e",padding:"10px 10px",display:"flex",
+      <div style={{borderTop:"1px solid #24212e",padding:"9px 10px",display:"flex",
         alignItems:"center",gap:8}}>
         <div style={{width:30,height:30,borderRadius:"50%",background:"#5c2030",color:"#fff",
           display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:12,
@@ -2405,7 +2513,7 @@ function Sidebar({page,setPage,onLogout,open,onCloseMobile,escuro,setEscuro}){
 
 const PAGE_TITLES={
   dashboard:"Dashboard", central_work:"Central", estoque:"Estoque", pedidos:"Pedidos",
-  custo:"Custo / Lucro", caixa:"Caixa", tarefas:"Tarefas", fornecedor:"Fornecedores", ecossistema:"Ecossistema",
+  custo:"Custo / Lucro", caixa:"Caixa", tarefas:"Work", fornecedor:"Fornecedores", ecossistema:"Ecossistema",
 };
 
 function Topbar({page,busca,setBusca,onRefresh,escuro}){
@@ -2564,7 +2672,7 @@ export default function App(){
 
   return(
     <div style={{display:"flex",width:"100%",height:"100vh",overflow:"hidden",
-      background:escuro?"#0b0b0f":"#f6f7f9",
+      background:escuro?"#0b0b0f":"#F5F6FA",
       fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"}}>
       <Sidebar page={page} setPage={setPage} onLogout={logout} escuro={escuro} setEscuro={setEscuro}/>
       <div style={{flex:"1 1 auto",minWidth:0,width:"100%",display:"flex",flexDirection:"column",
