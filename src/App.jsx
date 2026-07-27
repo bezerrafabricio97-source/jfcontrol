@@ -100,6 +100,55 @@ function calcularIndicadoresOperacionais(db){
   const metaSemana=db.meta.pedidos>0?Math.max(1,Math.round(db.meta.pedidos/4)):7;
   return{emTransp,atrasados,estoqueCritico,vendasSemana,metaSemana};
 }
+// ── CRM — helpers de negócio ────────────────────────────────────
+const ORIGENS_CLIENTE=["Futebol","Grupo WhatsApp","Indicação","Instagram","Facebook","TikTok","Cliente antigo","Outro"];
+const STATUS_CLIENTE=["Ativo","Inativo","Bloqueado"];
+const SITUACAO_PAGAMENTO=["Bom Pagador","Neutro","Atenção"];
+const COR_SITUACAO_PAGAMENTO={"Bom Pagador":"#16a34a",Neutro:"#9ca3af","Atenção":"#dc2626"};
+// Um pedido "pertence" a um cliente se o telefone bater (só dígitos) ou, na
+// falta disso, se o nome bater (sem diferenciar maiúsculas/espaços nas pontas).
+function clienteCorrespondePedido(c,p){
+  const telC=(c.telefone||"").replace(/\D/g,"");
+  const telP=(p.telefone||"").replace(/\D/g,"");
+  if(telC&&telP&&telC===telP)return true;
+  return !!((c.nome||"").trim().toLowerCase()&&(c.nome||"").trim().toLowerCase()===(p.cliente||"").trim().toLowerCase());
+}
+function pedidosDoCliente(c,pedidos){
+  return pedidos.filter(p=>!isEstoque(p)&&clienteCorrespondePedido(c,p));
+}
+function lucroPedido(p){
+  return r((p.precoVenda||0)*(p.qtd||1)-((p.custoProduto||0)+(p.custoTaxa||0))*(p.qtd||1));
+}
+function ultimaCompraCliente(c,pedidos){
+  const ps=pedidosDoCliente(c,pedidos).filter(p=>p.data);
+  if(ps.length===0)return null;
+  return ps.reduce((max,p)=>p.data>max?p.data:max,ps[0].data);
+}
+function diasDesde(dataStr){
+  if(!dataStr)return null;
+  return Math.floor((new Date()-new Date(dataStr))/(1000*60*60*24));
+}
+// Situação calculada por recência de compra (últimos 90 dias) — é o indicador
+// 🟢/⚪ mostrado na lista. É diferente do campo manual "status" do cadastro.
+function situacaoRecenciaCliente(c,pedidos){
+  const dias=diasDesde(ultimaCompraCliente(c,pedidos));
+  return(dias!==null&&dias<=90)?"Ativo":"Inativo";
+}
+// Linha do tempo: eventos de compra/pagamento/entrega são sempre calculados a
+// partir dos Pedidos (nunca duplicados aqui). Só o que não existe em outro
+// lugar (cadastro, notas manuais) fica de fato guardado em cliente.timeline.
+function timelineCliente(c,pedidos){
+  const eventos=[];
+  if(c.criadoEm)eventos.push({data:c.criadoEm,texto:"Cliente cadastrado"});
+  pedidosDoCliente(c,pedidos).forEach(p=>{
+    const desc=`${p.time||p.camisa||""}${p.uniforme?` (${p.uniforme})`:""}${p.tamanho?` · ${p.tamanho}`:""}`.trim();
+    if(p.data)eventos.push({data:p.data,texto:`Comprou ${desc||"uma camisa"}`});
+    if((p.valorRecebido||0)>0)eventos.push({data:p.data,texto:"Pagamento recebido"});
+    if(p.status==="Entregue")eventos.push({data:p.data,texto:"Pedido entregue"});
+  });
+  (c.timeline||[]).forEach(e=>eventos.push({data:e.data,texto:e.texto}));
+  return eventos.filter(e=>e.data).sort((a,b)=>a.data.localeCompare(b.data));
+}
 const fmtData=(d)=>{
   if(!d)return"—";
   const [ano,mes,dia]=d.split("-");
@@ -126,7 +175,7 @@ function estoqueInicial(){
   return items;
 }
 
-const DB0={produtos:[],pedidos:[],caixa:[],tarefas:[],pedidosFornecedor:[],
+const DB0={produtos:[],pedidos:[],caixa:[],tarefas:[],pedidosFornecedor:[],clientes:[],
   meta:{pedidos:30,receita:3600,lucro:1500,posts:0,futebol:0},
   centralComando:{missao:"Conseguir pelo menos 1 venda hoje",
     filaAcoes:["Postar camisa do Bahia às 19h","Conferir pagamentos pendentes","Atualizar estoque"]},
@@ -189,6 +238,7 @@ function migrarDB(db){
     status: ST_PEDIDO.includes(p.status) ? p.status : (STATUS_MIGRACAO[p.status]||"A Fazer"),
   }));
   out.caixa=out.caixa||[];
+  out.clientes=Array.isArray(out.clientes)?out.clientes:[];
   // Migra tarefas do formato antigo (feita/prioridade/data) pro novo modelo do Work
   // (status/urgência/prazo/categoria/responsável). Tarefa que já está no formato novo
   // (tem status válido) não é tocada de novo.
@@ -1978,6 +2028,7 @@ function LinhaTarefaWork({t,onToggle,onStatus,onDelete}){
           {t.prazo&&<span style={{fontSize:11,color:atrasada?"#dc2626":"#9ca3af",fontWeight:atrasada?700:400}}>
             📅 {fmtData(t.prazo)}{atrasada?" · atrasada":""}</span>}
           {t.responsavel&&<span style={{fontSize:11,color:"#9ca3af"}}>👤 {t.responsavel}</span>}
+          {t.clienteNome&&<span style={{fontSize:11,color:"#5c2030",fontWeight:600}}>🧾 {t.clienteNome}</span>}
         </div>
       </div>
       <select value={t.status} onChange={e=>onStatus(t.id,e.target.value)}
@@ -2316,6 +2367,272 @@ function PageEcossistema({db,setDb}){
     </div>
   );
 }
+// ── CRM — cadastro de clientes, histórico e linha do tempo ──────
+const CLIENTE_VAZIO={nome:"",telefone:"",cidade:"",instagram:"",observacoes:"",origem:"Futebol",
+  status:"Ativo",creditoLimite:0,valorEmAberto:0,situacaoPagamento:"Neutro"};
+
+function ModalCliente({inicial,onClose,onSave}){
+  const [f,setF]=useState(inicial?{...CLIENTE_VAZIO,...inicial}:{...CLIENTE_VAZIO});
+  const s=(k,v)=>setF(p=>({...p,[k]:v}));
+  const salvar=()=>{
+    if(!f.nome.trim())return alert("Informe o nome.");
+    if(!f.origem)return alert("Origem é obrigatória — é o que vamos medir.");
+    onSave(f);
+  };
+  return(
+    <Modal title={inicial?"Editar Cliente":"Novo Cliente"} onClose={onClose} wide>
+      <div style={{display:"flex",flexWrap:"wrap",gap:12}}>
+        <Field label="Nome" half><Inp value={f.nome} onChange={e=>s("nome",e.target.value)} autoFocus/></Field>
+        <Field label="Telefone" half><Inp value={f.telefone} onChange={e=>s("telefone",e.target.value)} placeholder="(xx) xxxxx-xxxx"/></Field>
+        <Field label="Cidade" third><Inp value={f.cidade} onChange={e=>s("cidade",e.target.value)}/></Field>
+        <Field label="Instagram (opcional)" third><Inp value={f.instagram} onChange={e=>s("instagram",e.target.value)} placeholder="@usuario"/></Field>
+        <Field label="Origem" third><Sel value={f.origem} onChange={e=>s("origem",e.target.value)}>
+          {ORIGENS_CLIENTE.map(o=><option key={o}>{o}</option>)}</Sel></Field>
+        <Field label="Observações"><Inp value={f.observacoes} onChange={e=>s("observacoes",e.target.value)}
+          placeholder='Ex: "Prefere tamanho G", "Paga no Pix"'/></Field>
+        <Field label="Status" third><Sel value={f.status} onChange={e=>s("status",e.target.value)}>
+          {STATUS_CLIENTE.map(o=><option key={o}>{o}</option>)}</Sel></Field>
+        <Field label="Limite de crédito" third><Inp type="number" min="0" value={f.creditoLimite}
+          onChange={e=>s("creditoLimite",Number(e.target.value)||0)}/></Field>
+        <Field label="Valor em aberto" third><Inp type="number" min="0" value={f.valorEmAberto}
+          onChange={e=>s("valorEmAberto",Number(e.target.value)||0)}/></Field>
+        <Field label="Situação de pagamento" half><Sel value={f.situacaoPagamento} onChange={e=>s("situacaoPagamento",e.target.value)}>
+          {SITUACAO_PAGAMENTO.map(o=><option key={o}>{o}</option>)}</Sel></Field>
+      </div>
+      <MBtns onClose={onClose} onSave={salvar}/>
+    </Modal>
+  );
+}
+
+function ModalTarefaCliente({cliente,onClose,onSave}){
+  const [f,setF]=useState({titulo:"",categoria:"Operacional",urgencia:"Média",prazo:""});
+  const s=(k,v)=>setF(p=>({...p,[k]:v}));
+  const salvar=()=>{if(!f.titulo.trim())return alert("Informe o título.");onSave(f);};
+  return(
+    <Modal title={`Nova tarefa — ${cliente.nome}`} onClose={onClose}>
+      <div style={{display:"flex",flexWrap:"wrap",gap:12}}>
+        <Field label="Título"><Inp value={f.titulo} onChange={e=>s("titulo",e.target.value)}
+          placeholder='Ex: "Avisar chegada Bahia"' autoFocus/></Field>
+        <Field label="Categoria" third><Sel value={f.categoria} onChange={e=>s("categoria",e.target.value)}>
+          {CATEGORIAS_WORK.map(c=><option key={c}>{c}</option>)}</Sel></Field>
+        <Field label="Urgência" third><Sel value={f.urgencia} onChange={e=>s("urgencia",e.target.value)}>
+          {URGENCIAS_WORK.map(u=><option key={u}>{u}</option>)}</Sel></Field>
+        <Field label="Prazo" third><Inp type="date" value={f.prazo} onChange={e=>s("prazo",e.target.value)}/></Field>
+      </div>
+      <MBtns onClose={onClose} onSave={salvar}/>
+    </Modal>
+  );
+}
+
+function PageClienteDetalhe({cliente,db,setDb,onVoltar,onNavigate}){
+  const [modalEdit,setModalEdit]=useState(false);
+  const [modalTarefa,setModalTarefa]=useState(false);
+  const historico=pedidosDoCliente(cliente,db.pedidos).sort((a,b)=>(b.data||"").localeCompare(a.data||""));
+  const timeline=timelineCliente(cliente,db.pedidos).reverse();
+  const tarefasCliente=db.tarefas.filter(t=>t.clienteId===cliente.id);
+
+  const salvarEdit=f=>{
+    setDb(prev=>({...prev,clientes:prev.clientes.map(c=>c.id===cliente.id?{...c,...f}:c)}));
+    setModalEdit(false);
+  };
+  const criarTarefa=f=>{
+    setDb(prev=>{const id=prev.nextId+1;return{...prev,nextId:id,tarefas:[...prev.tarefas,
+      {id,titulo:f.titulo,descricao:"",categoria:f.categoria,urgencia:f.urgencia,prazo:f.prazo,
+        status:"Pendente",responsavel:"",clienteId:cliente.id,clienteNome:cliente.nome}]};});
+    setModalTarefa(false);
+  };
+
+  return(
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16}}>
+        <button onClick={onVoltar} style={{background:"none",border:"none",color:"#6b7280",
+          fontSize:13,cursor:"pointer",padding:0,marginBottom:8,display:"flex",alignItems:"center",gap:4}}>
+          ← Voltar para Clientes
+        </button>
+        <Btn onClick={()=>setModalEdit(true)}>✎ Editar</Btn>
+      </div>
+
+      <div style={{background:"#fff",border:"1px solid #e5e7eb",borderRadius:12,padding:"18px 20px",marginBottom:16}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:12}}>
+          <div>
+            <div style={{fontSize:20,fontWeight:800,color:"#111"}}>{cliente.nome}</div>
+            <div style={{fontSize:13,color:"#6b7280",marginTop:4}}>
+              {cliente.telefone&&<>📞 {cliente.telefone} · </>}
+              Origem: <b>{cliente.origem}</b> · Cliente desde: {fmtData(cliente.criadoEm)}
+            </div>
+            {cliente.observacoes&&<div style={{fontSize:13,color:"#374151",marginTop:8,fontStyle:"italic"}}>
+              "{cliente.observacoes}"</div>}
+          </div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            <span style={{fontSize:11,fontWeight:700,padding:"4px 10px",borderRadius:20,
+              background:"#f9fafb",border:"1px solid #e5e7eb",color:"#374151"}}>{cliente.status}</span>
+            <span style={{fontSize:11,fontWeight:700,padding:"4px 10px",borderRadius:20,
+              background:"#f9fafb",border:`1px solid ${COR_SITUACAO_PAGAMENTO[cliente.situacaoPagamento]}55`,
+              color:COR_SITUACAO_PAGAMENTO[cliente.situacaoPagamento]}}>{cliente.situacaoPagamento}</span>
+            {cliente.valorEmAberto>0&&<span style={{fontSize:11,fontWeight:700,padding:"4px 10px",
+              borderRadius:20,background:"#fef2f2",border:"1px solid #fecaca",color:"#dc2626"}}>
+              Deve {brl(cliente.valorEmAberto)}</span>}
+          </div>
+        </div>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"1.3fr 1fr",gap:16}}>
+        <div style={{display:"flex",flexDirection:"column",gap:16}}>
+          <Section title="🧾 Histórico de Compras">
+            {historico.length===0?<Empty msg="Nenhuma compra registrada ainda." icon="🛒"/>:(
+              <table style={{width:"100%",borderCollapse:"collapse"}}>
+                <thead><tr>
+                  <th style={TDSM_TH}>Data</th><th style={TDSM_TH}>Produto</th>
+                  <th style={TDSM_TH}>Valor</th><th style={TDSM_TH}>Lucro</th><th style={TDSM_TH}>Situação</th>
+                </tr></thead>
+                <tbody>{historico.map(p=>(
+                  <tr key={p.id}>
+                    <td style={TDSM}>{fmtData(p.data)}</td>
+                    <td style={TDSM}>{p.time||p.camisa}{p.uniforme?` (${p.uniforme})`:""} · {p.tamanho}</td>
+                    <td style={TDSM}>{brl((p.precoVenda||0)*(p.qtd||1))}</td>
+                    <td style={{...TDSM,color:lucroPedido(p)>=0?"#16a34a":"#dc2626",fontWeight:700}}>{brl(lucroPedido(p))}</td>
+                    <td style={TDSM}><Badge status={p.status}/></td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            )}
+          </Section>
+
+          <Section title="🕓 Linha do Tempo">
+            {timeline.length===0?<Empty msg="Nenhum evento ainda." icon="🕓"/>:(
+              <div style={{display:"flex",flexDirection:"column",gap:2}}>
+                {timeline.map((e,i)=>(
+                  <div key={i} style={{display:"flex",gap:12,padding:"8px 0",
+                    borderBottom:i<timeline.length-1?"1px solid #f5f5f5":"none"}}>
+                    <div style={{fontSize:12,color:"#9ca3af",width:80,flexShrink:0}}>{fmtData(e.data)}</div>
+                    <div style={{fontSize:13,color:"#374151"}}>{e.texto}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Section>
+        </div>
+
+        <div style={{display:"flex",flexDirection:"column",gap:16}}>
+          <Section title="💻 Work" action={<Btn onClick={()=>setModalTarefa(true)}>➕</Btn>}>
+            {tarefasCliente.length===0?<div style={{fontSize:13,color:"#9ca3af"}}>Nenhuma tarefa ligada a este cliente.</div>:(
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                {ordenarTarefasPorPrioridade(tarefasCliente).map(t=>(
+                  <div key={t.id} onClick={()=>onNavigate&&onNavigate("tarefas")} style={{fontSize:13,
+                    padding:"8px 10px",background:"#f9fafb",borderRadius:8,cursor:"pointer",
+                    borderLeft:`3px solid ${COR_URGENCIA_WORK[t.urgencia]}`}}>
+                    <div style={{fontWeight:600,color:"#111",
+                      textDecoration:t.status==="Concluído"?"line-through":"none"}}>{t.titulo}</div>
+                    <div style={{fontSize:11,color:"#9ca3af",marginTop:2}}>{t.status} · {t.categoria}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Section>
+        </div>
+      </div>
+
+      {modalEdit&&<ModalCliente inicial={cliente} onClose={()=>setModalEdit(false)} onSave={salvarEdit}/>}
+      {modalTarefa&&<ModalTarefaCliente cliente={cliente} onClose={()=>setModalTarefa(false)} onSave={criarTarefa}/>}
+    </div>
+  );
+}
+
+function PageCRM({db,setDb,onNavigate}){
+  const [selecionado,setSelecionado]=useState(null);
+  const [modal,setModal]=useState(false);
+  const [busca,setBusca]=useState("");
+  const [filtro,setFiltro]=useState("todos");
+
+  const clienteAtual=selecionado?db.clientes.find(c=>c.id===selecionado):null;
+  if(clienteAtual){
+    return <PageClienteDetalhe cliente={clienteAtual} db={db} setDb={setDb} onNavigate={onNavigate}
+      onVoltar={()=>setSelecionado(null)}/>;
+  }
+
+  const compras=c=>pedidosDoCliente(c,db.pedidos).length;
+  const totalClientes=db.clientes.length;
+  const ativos90=db.clientes.filter(c=>situacaoRecenciaCliente(c,db.pedidos)==="Ativo").length;
+  const recorrentes=db.clientes.filter(c=>compras(c)>=2).length;
+  const novosNoMes=db.clientes.filter(c=>(c.criadoEm||"").startsWith(mesAtual())).length;
+
+  const FILTROS=[{k:"todos",l:"Todos"},{k:"ativos",l:"Ativos"},{k:"inativos",l:"Inativos"},
+    {k:"vip",l:"VIP"},{k:"devendo",l:"Devendo"},{k:"recorrentes",l:"Recorrentes"}];
+
+  const filtrados=db.clientes.filter(c=>{
+    const s=situacaoRecenciaCliente(c,db.pedidos);
+    if(filtro==="ativos"&&s!=="Ativo")return false;
+    if(filtro==="inativos"&&s!=="Inativo")return false;
+    if(filtro==="vip"&&compras(c)<5)return false;
+    if(filtro==="devendo"&&!(c.valorEmAberto>0))return false;
+    if(filtro==="recorrentes"&&compras(c)<2)return false;
+    if(busca.trim()){
+      const q=busca.trim().toLowerCase();
+      if(!(c.nome||"").toLowerCase().includes(q)&&!(c.telefone||"").includes(busca.trim()))return false;
+    }
+    return true;
+  });
+
+  const salvarNovo=f=>{
+    setDb(prev=>{
+      const id=(prev.clientes.reduce((m,c)=>Math.max(m,c.id),0)||0)+1;
+      const novo={...f,id,criadoEm:hoje(),timeline:[{id:1,data:hoje(),texto:"Cliente cadastrado"}]};
+      return{...prev,clientes:[...prev.clientes,novo]};
+    });
+    setModal(false);
+  };
+
+  return(
+    <div>
+      <div style={{marginBottom:16}}>
+        <div style={{fontSize:22,fontWeight:800,color:"#111"}}>CRM</div>
+        <div style={{fontSize:13,color:"#9ca3af"}}>Quem é, como chegou, o que comprou, se pagou</div>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:12,marginBottom:16}}>
+        <KPI label="👥 Clientes" value={totalClientes} color="#111"/>
+        <KPI label="🟢 Ativos (90 dias)" value={ativos90} color="#16a34a"/>
+        <KPI label="⭐ Recorrentes" value={recorrentes} color="#2563eb"/>
+        <KPI label="🆕 Novos no mês" value={novosNoMes} color="#d4af37"/>
+      </div>
+
+      <Section action={
+        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+          <Inp value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Nome ou telefone..."
+            style={{width:180}}/>
+          <Tabs options={FILTROS} value={filtro} onChange={setFiltro}/>
+          <Btn onClick={()=>setModal(true)}>➕ Novo Cliente</Btn>
+        </div>
+      }>
+        {filtrados.length===0?<Empty msg="Nenhum cliente encontrado." icon="👥"/>:(
+          <table style={{width:"100%",borderCollapse:"collapse"}}>
+            <thead><tr>
+              <th style={TDSM_TH}>Nome</th><th style={TDSM_TH}>Origem</th>
+              <th style={TDSM_TH}>Última compra</th><th style={TDSM_TH}>Compras</th><th style={TDSM_TH}>Situação</th>
+            </tr></thead>
+            <tbody>{filtrados.map(c=>{
+              const ultima=ultimaCompraCliente(c,db.pedidos);
+              const dias=diasDesde(ultima);
+              const s=situacaoRecenciaCliente(c,db.pedidos);
+              return(
+                <HRow key={c.id} onClick={()=>setSelecionado(c.id)}>
+                  <td style={{...TDSM,fontWeight:700,color:"#111"}}>{c.nome}</td>
+                  <td style={TDSM}>{c.origem}</td>
+                  <td style={TDSM}>{dias===null?"—":`${dias} dias`}</td>
+                  <td style={TDSM}>{compras(c)}</td>
+                  <td style={TDSM}>{s==="Ativo"?"🟢 Ativo":"⚪ Inativo"}</td>
+                </HRow>
+              );
+            })}</tbody>
+          </table>
+        )}
+      </Section>
+
+      {modal&&<ModalCliente onClose={()=>setModal(false)} onSave={salvarNovo}/>}
+    </div>
+  );
+}
+
 // ── ÍCONES (SVG inline, sem dependências) ──────────────────────
 function Ico({path,size=18,color="currentColor",strokeW=2}){
   return(
@@ -2347,6 +2664,7 @@ const MENU_EMOJI = {
   central_work:"🧭",
   estoque:"📦",
   pedidos:"🛒",
+  crm:"👥",
   gestao:"📋",
   custo:"💰",
   caixa:"🏦",
@@ -2420,6 +2738,7 @@ const MENU_PRINCIPAL=[
   {k:"central_work",l:"Central",ico:"central_work"},
   {k:"dashboard",l:"Dashboard",ico:"dashboard"},
   {k:"pedidos",l:"Pedidos",ico:"pedidos"},
+  {k:"crm",l:"CRM",ico:"crm"},
   {k:"estoque",l:"Estoque",ico:"estoque"},
 ];
 const MENU_FINANCEIRO=[
@@ -2512,7 +2831,7 @@ function Sidebar({page,setPage,onLogout,open,onCloseMobile,escuro,setEscuro}){
 }
 
 const PAGE_TITLES={
-  dashboard:"Dashboard", central_work:"Central", estoque:"Estoque", pedidos:"Pedidos",
+  dashboard:"Dashboard", central_work:"Central", estoque:"Estoque", pedidos:"Pedidos", crm:"CRM",
   custo:"Custo / Lucro", caixa:"Caixa", tarefas:"Work", fornecedor:"Fornecedores", ecossistema:"Ecossistema",
 };
 
@@ -2631,8 +2950,9 @@ export default function App(){
   const editPedido=p=>setModalPedido({modo:"editar",item:p});
   const delPedido=id=>{if(!window.confirm("Excluir pedido?"))return;setDb(prev=>({...prev,pedidos:prev.pedidos.filter(p=>p.id!==id)}));};
   const salvarPedido=f=>{
+    const modoNovo=modalPedido?.modo!=="editar";
     setDb(prev=>{
-      if(modalPedido?.modo==="editar")return{...prev,pedidos:prev.pedidos.map(p=>p.id===f.id?f:p)};
+      if(!modoNovo)return{...prev,pedidos:prev.pedidos.map(p=>p.id===f.id?f:p)};
       const id=prev.nextId+1;
       let produtos=prev.produtos;
       if(f.vendaEstoque&&f.produtoEstoqueId){
@@ -2640,6 +2960,20 @@ export default function App(){
       }
       return{...prev,nextId:id,pedidos:[...prev.pedidos,{...f,id}],produtos};
     });
+    // CRM: pedido novo pra um cliente que ainda não existe lá → oferece cadastrar
+    // com o que já foi digitado agora, sem pedir pra digitar tudo de novo.
+    if(modoNovo&&f.cliente&&!isEstoque(f)){
+      const existe=db.clientes.some(c=>clienteCorrespondePedido(c,f));
+      if(!existe&&window.confirm(`Cliente "${f.cliente}" ainda não está no CRM. Deseja cadastrar agora?`)){
+        setDb(prev=>{
+          const id=(prev.clientes.reduce((m,c)=>Math.max(m,c.id),0)||0)+1;
+          const novo={id,nome:f.cliente,telefone:f.telefone||"",cidade:"",instagram:"",observacoes:"",
+            origem:"Outro",status:"Ativo",creditoLimite:0,valorEmAberto:0,situacaoPagamento:"Neutro",
+            criadoEm:hoje(),timeline:[{id:1,data:hoje(),texto:"Cliente cadastrado a partir de um pedido"}]};
+          return{...prev,clientes:[...prev.clientes,novo]};
+        });
+      }
+    }
     setModalPedido(null);
   };
   const updateMeta=m=>setDb(prev=>({...prev,meta:m}));
@@ -2661,6 +2995,7 @@ export default function App(){
       case "central_work": return <PageCentralWork db={db} setDb={setDb} onNavigate={navegarPara}/>;
       case "estoque": return <PageEstoque db={db} onAdd={addProduto} onEdit={editProduto} onDelete={delProduto}/>;
       case "pedidos": return <PagePedidos db={db} onAdd={addPedido} onEdit={editPedido} onDelete={delPedido} onUpdateMeta={updateMeta} statusInicial={statusFiltroPedidos} mesInicial={mesFiltroPedidos}/>;
+      case "crm": return <PageCRM db={db} setDb={setDb} onNavigate={navegarPara}/>;
       case "custo": return <PageCusto db={db} setDb={setDb}/>;
       case "caixa": return <PageCaixa db={db} setDb={setDb}/>;
       case "tarefas": return <PageTarefas db={db} setDb={setDb}/>;
