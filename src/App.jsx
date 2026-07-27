@@ -736,12 +736,11 @@ function resolverFocoHoje({atrasados,estoqueCritico,emTransp}){
   return{msg:"Tudo em dia — hora de buscar novas vendas!",cor:"#5cd680",fundo:"#1a241d"};
 }
 function CentralComando({db,setDb,onNavigate,emTransp,atrasados,estoqueCritico,vendasSemana,metaSemana}){
-  const salvarCampo=(campo,valor)=>setDb(prev=>({...prev,centralComando:{...prev.centralComando,[campo]:valor}}));
   const pSemana=metaSemana>0?Math.min(100,(vendasSemana/metaSemana)*100):0;
-  // Prioridades puxadas automaticamente do Work: urgência Alta/Crítica + Pendente.
-  // Concluída ou de baixa urgência não aparece aqui — só no Work. Não se cadastra
-  // nada nesta tela; ela só reflete o que já está lançado lá.
+  // A Central não guarda nada próprio — tudo aqui é lido de outro módulo (Work,
+  // Pedidos, Estoque, Metas). Editar acontece nesses módulos, nunca aqui.
   const tarefasUrgentes=ordenarTarefasPorPrioridade(db.tarefas.filter(tarefaMereceAtencao));
+  const proximaTarefa=tarefasUrgentes[0]||null;
   const concluirTarefa=id=>setDb(prev=>({...prev,
     tarefas:prev.tarefas.map(t=>t.id===id?{...t,status:"Concluído"}:t)}));
   const foco=resolverFocoHoje({atrasados,estoqueCritico,emTransp});
@@ -773,38 +772,45 @@ function CentralComando({db,setDb,onNavigate,emTransp,atrasados,estoqueCritico,v
           </div>
         </div>
 
+        {/* Missão do dia — definida no Work, aqui é só leitura */}
         <div style={{background:"#262233",borderRadius:10,padding:"14px 16px",gridColumn:"1 / -1"}}>
-          <div style={{fontSize:11,color:"#a8a5b3",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.4px"}}>
-            🚩 Missão do dia
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6,
+            cursor:"pointer"}} onClick={()=>onNavigate&&onNavigate("tarefas")}>
+            <span style={{fontSize:11,color:"#a8a5b3",textTransform:"uppercase",letterSpacing:"0.4px"}}>
+              🚩 Missão do dia
+            </span>
+            <span style={{fontSize:10,color:"#6b6878"}}>editar no Work →</span>
           </div>
-          <CampoEditavel valor={db.centralComando.missao} placeholder="Qual sua prioridade hoje?"
-            onSalvar={v=>salvarCampo("missao",v)}/>
+          <div style={{fontSize:14,color:"#fff",fontWeight:500}}>
+            {db.centralComando.missao||"Nenhuma missão definida ainda"}
+          </div>
         </div>
 
+        {/* Próxima Ação — a primeira tarefa Alta/Crítica pendente do Work */}
         <div style={{background:"#262233",borderRadius:10,padding:"14px 16px",gridColumn:"1 / -1"}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8,
             cursor:"pointer"}} onClick={()=>onNavigate&&onNavigate("tarefas")}>
             <span style={{fontSize:11,color:"#a8a5b3",textTransform:"uppercase",letterSpacing:"0.4px"}}>
-              📌 Prioridades do Work
+              📌 Próxima Ação
             </span>
-            {tarefasUrgentes.length>0&&<span style={{fontSize:10,color:"#6b6878"}}>ver tudo →</span>}
+            {tarefasUrgentes.length>0&&<span style={{fontSize:10,color:"#6b6878"}}>ver tudo no Work →</span>}
           </div>
-          {tarefasUrgentes.length===0?(
+          {!proximaTarefa?(
             <div style={{fontSize:13,color:"#5cd680"}}>✓ Nenhuma tarefa urgente agora</div>
           ):(
-            <div style={{display:"flex",flexDirection:"column",gap:6}}>
-              {tarefasUrgentes.slice(0,4).map(t=>(
-                <div key={t.id} style={{display:"flex",alignItems:"center",gap:8}}>
-                  <span style={{width:6,height:6,borderRadius:"50%",flexShrink:0,
-                    background:COR_URGENCIA_WORK[t.urgencia]}}/>
-                  <span style={{flex:1,fontSize:13,color:"#fff"}}>{t.titulo}</span>
-                  <button onClick={()=>concluirTarefa(t.id)} style={{background:"#274d3a",color:"#7ee0a8",
-                    border:"none",borderRadius:5,padding:"3px 9px",fontSize:11,fontWeight:700,
-                    cursor:"pointer",flexShrink:0}}>✓</button>
-                </div>
-              ))}
-              {tarefasUrgentes.length>4&&
-                <div style={{fontSize:11,color:"#6b6878"}}>+{tarefasUrgentes.length-4} outra{tarefasUrgentes.length-4>1?"s":""} no Work</div>}
+            <div>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <span style={{width:7,height:7,borderRadius:"50%",flexShrink:0,
+                  background:COR_URGENCIA_WORK[proximaTarefa.urgencia]}}/>
+                <span style={{flex:1,fontSize:14,color:"#fff",fontWeight:600}}>{proximaTarefa.titulo}</span>
+                <button onClick={()=>concluirTarefa(proximaTarefa.id)} style={{background:"#274d3a",color:"#7ee0a8",
+                  border:"none",borderRadius:5,padding:"4px 11px",fontSize:11,fontWeight:700,
+                  cursor:"pointer",flexShrink:0}}>✓ Concluir</button>
+              </div>
+              {tarefasUrgentes.length>1&&
+                <div style={{fontSize:11,color:"#6b6878",marginTop:6,marginLeft:15}}>
+                  +{tarefasUrgentes.length-1} outra{tarefasUrgentes.length-1>1?"s":""} urgente{tarefasUrgentes.length-1>1?"s":""} no Work
+                </div>}
             </div>
           )}
         </div>
@@ -2076,9 +2082,18 @@ function PageTarefas({db,setDb}){
     t.id===id?{...t,status:t.status==="Concluído"?"Pendente":"Concluído"}:t)}));
   const mudarStatus=(id,status)=>setDb(prev=>({...prev,tarefas:prev.tarefas.map(t=>t.id===id?{...t,status}:t)}));
   const del=id=>{if(!window.confirm("Excluir?"))return;setDb(prev=>({...prev,tarefas:prev.tarefas.filter(t=>t.id!==id)}));};
+  const salvarMissao=v=>setDb(prev=>({...prev,centralComando:{...prev.centralComando,missao:v}}));
 
   return(
     <div>
+      <div style={{background:"#1D1A28",borderRadius:12,padding:"14px 18px",marginBottom:16}}>
+        <div style={{fontSize:11,color:"#a8a5b3",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.4px"}}>
+          🚩 Missão do dia <span style={{textTransform:"none",fontWeight:400,color:"#6b6878"}}>— aparece na Central</span>
+        </div>
+        <CampoEditavel valor={db.centralComando.missao} placeholder="Qual sua prioridade hoje?"
+          onSalvar={salvarMissao}/>
+      </div>
+
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:12,marginBottom:16}}>
         <KPI label="Urgentes pendentes" value={pendentesUrgentes} color={pendentesUrgentes>0?"#dc2626":"#16a34a"}/>
         <KPI label="Atrasadas" value={atrasadas} color={atrasadas>0?"#dc2626":"#16a34a"}/>
@@ -2431,6 +2446,13 @@ function PageClienteDetalhe({cliente,db,setDb,onVoltar,onNavigate}){
   const timeline=timelineCliente(cliente,db.pedidos).reverse();
   const tarefasCliente=db.tarefas.filter(t=>t.clienteId===cliente.id);
 
+  // Resumo — tudo calculado a partir dos Pedidos, nada digitado de novo aqui.
+  const totalCompras=historico.length;
+  const totalGasto=r(historico.reduce((a,p)=>a+(p.precoVenda||0)*(p.qtd||1),0));
+  const lucroGerado=r(historico.reduce((a,p)=>a+lucroPedido(p),0));
+  const ticketMedio=totalCompras>0?r(totalGasto/totalCompras):0;
+  const dataUltimaCompra=ultimaCompraCliente(cliente,db.pedidos);
+
   const salvarEdit=f=>{
     setDb(prev=>({...prev,clientes:prev.clientes.map(c=>c.id===cliente.id?{...c,...f}:c)}));
     setModalEdit(false);
@@ -2441,6 +2463,13 @@ function PageClienteDetalhe({cliente,db,setDb,onVoltar,onNavigate}){
         status:"Pendente",responsavel:"",clienteId:cliente.id,clienteNome:cliente.nome}]};});
     setModalTarefa(false);
   };
+
+  const tile=(label,value,color="#111")=>(
+    <div style={{background:"#f9fafb",border:"1px solid #f0f0f0",borderRadius:8,padding:"10px 12px"}}>
+      <div style={{fontSize:10.5,color:"#9ca3af",marginBottom:3,textTransform:"uppercase",letterSpacing:"0.3px"}}>{label}</div>
+      <div style={{fontSize:14,fontWeight:700,color}}>{value}</div>
+    </div>
+  );
 
   return(
     <div>
@@ -2453,26 +2482,32 @@ function PageClienteDetalhe({cliente,db,setDb,onVoltar,onNavigate}){
       </div>
 
       <div style={{background:"#fff",border:"1px solid #e5e7eb",borderRadius:12,padding:"18px 20px",marginBottom:16}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:12}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:12,marginBottom:16}}>
           <div>
             <div style={{fontSize:20,fontWeight:800,color:"#111"}}>{cliente.nome}</div>
             <div style={{fontSize:13,color:"#6b7280",marginTop:4}}>
-              {cliente.telefone&&<>📞 {cliente.telefone} · </>}
-              Origem: <b>{cliente.origem}</b> · Cliente desde: {fmtData(cliente.criadoEm)}
+              {cliente.telefone&&<>📞 {cliente.telefone} · </>}Status: <b>{cliente.status}</b>
             </div>
             {cliente.observacoes&&<div style={{fontSize:13,color:"#374151",marginTop:8,fontStyle:"italic"}}>
               "{cliente.observacoes}"</div>}
           </div>
-          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-            <span style={{fontSize:11,fontWeight:700,padding:"4px 10px",borderRadius:20,
-              background:"#f9fafb",border:"1px solid #e5e7eb",color:"#374151"}}>{cliente.status}</span>
-            <span style={{fontSize:11,fontWeight:700,padding:"4px 10px",borderRadius:20,
-              background:"#f9fafb",border:`1px solid ${COR_SITUACAO_PAGAMENTO[cliente.situacaoPagamento]}55`,
-              color:COR_SITUACAO_PAGAMENTO[cliente.situacaoPagamento]}}>{cliente.situacaoPagamento}</span>
-            {cliente.valorEmAberto>0&&<span style={{fontSize:11,fontWeight:700,padding:"4px 10px",
-              borderRadius:20,background:"#fef2f2",border:"1px solid #fecaca",color:"#dc2626"}}>
-              Deve {brl(cliente.valorEmAberto)}</span>}
-          </div>
+          {cliente.valorEmAberto>0&&<span style={{fontSize:11,fontWeight:700,padding:"4px 10px",
+            borderRadius:20,background:"#fef2f2",border:"1px solid #fecaca",color:"#dc2626",flexShrink:0}}>
+            Deve {brl(cliente.valorEmAberto)}</span>}
+        </div>
+
+        <div style={{fontSize:11,color:"#9ca3af",marginBottom:8,textTransform:"uppercase",
+          letterSpacing:"0.4px",fontWeight:700}}>📊 Resumo</div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:8}}>
+          {tile("Nome",cliente.nome)}
+          {tile("Origem",cliente.origem)}
+          {tile("Cliente desde",fmtData(cliente.criadoEm))}
+          {tile("Última compra",dataUltimaCompra?fmtData(dataUltimaCompra):"—")}
+          {tile("Total gasto",brl(totalGasto))}
+          {tile("Lucro gerado",brl(lucroGerado),lucroGerado>=0?"#16a34a":"#dc2626")}
+          {tile("Nº de compras",totalCompras)}
+          {tile("Ticket médio",brl(ticketMedio))}
+          {tile("Situação",cliente.situacaoPagamento,COR_SITUACAO_PAGAMENTO[cliente.situacaoPagamento])}
         </div>
       </div>
 
@@ -2528,6 +2563,10 @@ function PageClienteDetalhe({cliente,db,setDb,onVoltar,onNavigate}){
                 ))}
               </div>
             )}
+          </Section>
+
+          <Section title="🧠 Inteligência">
+            <div style={{fontSize:13,color:"#9ca3af"}}>Ainda não há dados suficientes.</div>
           </Section>
         </div>
       </div>
@@ -2736,18 +2775,18 @@ function Login({onLogin}){
 // ── LAYOUT (Sidebar + Topbar) ──────────────────────────────────
 const MENU_PRINCIPAL=[
   {k:"central_work",l:"Central",ico:"central_work"},
+  {k:"tarefas",l:"Work",ico:"tarefas"},
   {k:"dashboard",l:"Dashboard",ico:"dashboard"},
   {k:"pedidos",l:"Pedidos",ico:"pedidos"},
+];
+const MENU_GESTAO=[
   {k:"crm",l:"CRM",ico:"crm"},
   {k:"estoque",l:"Estoque",ico:"estoque"},
+  {k:"ecossistema",l:"Ecossistema",ico:"ecossistema"},
 ];
 const MENU_FINANCEIRO=[
   {k:"custo",l:"Custo / Lucro",ico:"custo"},
   {k:"caixa",l:"Caixa",ico:"caixa"},
-];
-const MENU_GESTAO=[
-  {k:"tarefas",l:"Work",ico:"tarefas"},
-  {k:"ecossistema",l:"Ecossistema",ico:"ecossistema"},
 ];
 
 function MenuItem({item,active,onClick,escuro}){
@@ -2793,13 +2832,14 @@ function Sidebar({page,setPage,onLogout,open,onCloseMobile,escuro,setEscuro}){
       <div style={{flex:1,padding:"4px 0"}}>
         <MenuLabel>Principal</MenuLabel>
         {MENU_PRINCIPAL.map(it=><MenuItem key={it.k} item={it} active={page===it.k} onClick={()=>ir(it.k)}/>)}
-        <MenuLabel>Financeiro</MenuLabel>
-        {MENU_FINANCEIRO.map(it=><MenuItem key={it.k} item={it} active={page===it.k} onClick={()=>ir(it.k)}/>)}
         <MenuLabel>Gestão</MenuLabel>
         {MENU_GESTAO.map(it=><MenuItem key={it.k} item={it} active={page===it.k} onClick={()=>ir(it.k)}/>)}
+        <MenuLabel>Financeiro</MenuLabel>
+        {MENU_FINANCEIRO.map(it=><MenuItem key={it.k} item={it} active={page===it.k} onClick={()=>ir(it.k)}/>)}
+        <MenuLabel>Sistema</MenuLabel>
         <div onClick={()=>setEscuro(e=>!e)} onMouseEnter={()=>setHDark(true)} onMouseLeave={()=>setHDark(false)}
-          style={{display:"flex",alignItems:"center",gap:9,padding:"7px 12px",cursor:"pointer",
-            borderRadius:8,margin:"6px 8px 2px",
+          style={{display:"flex",alignItems:"center",gap:9,padding:"6px 12px",cursor:"pointer",
+            borderRadius:8,margin:"1px 8px",
             background:hDark?"rgba(255,255,255,0.08)":"transparent",transition:"all 0.15s"}}>
           <span style={{fontSize:15,width:16,display:"inline-flex",justifyContent:"center"}}>🌙</span>
           <span style={{fontSize:12.5,fontWeight:500,color:"#c4c1cc",flex:1}}>Modo Escuro</span>
@@ -2809,22 +2849,21 @@ function Sidebar({page,setPage,onLogout,open,onCloseMobile,escuro,setEscuro}){
               top:2,left:escuro?16:2,transition:"all 0.2s",boxShadow:"0 1px 3px rgba(0,0,0,0.3)"}}/>
           </div>
         </div>
-      </div>
-      <div style={{borderTop:"1px solid #24212e",padding:"9px 10px",display:"flex",
-        alignItems:"center",gap:8}}>
-        <div style={{width:30,height:30,borderRadius:"50%",background:"#5c2030",color:"#fff",
-          display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:12,
-          flexShrink:0}}>F</div>
-        <div style={{flex:1,minWidth:0}}>
-          <div style={{fontSize:12.5,fontWeight:700,color:"#fff",whiteSpace:"nowrap",
-            overflow:"hidden",textOverflow:"ellipsis"}}>Fabrício</div>
-          <div style={{fontSize:10.5,color:"#8a8794"}}>Administrador</div>
+        <div style={{display:"flex",alignItems:"center",gap:9,padding:"6px 12px",margin:"1px 8px 4px"}}>
+          <div style={{width:22,height:22,borderRadius:"50%",background:"#5c2030",color:"#fff",
+            display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:10.5,
+            flexShrink:0}}>F</div>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:12,fontWeight:700,color:"#fff",whiteSpace:"nowrap",
+              overflow:"hidden",textOverflow:"ellipsis"}}>Fabrício</div>
+            <div style={{fontSize:9.5,color:"#8a8794"}}>Administrador</div>
+          </div>
+          <button onClick={onLogout} title="Sair"
+            style={{border:"none",background:"none",cursor:"pointer",padding:4,borderRadius:6,
+              display:"flex",color:"#8a8794",flexShrink:0}}>
+            <Ico path={ICONS.logout} size={15}/>
+          </button>
         </div>
-        <button onClick={onLogout} title="Sair"
-          style={{border:"none",background:"none",cursor:"pointer",padding:5,borderRadius:6,
-            display:"flex",color:"#8a8794",flexShrink:0}}>
-          <Ico path={ICONS.logout} size={16}/>
-        </button>
       </div>
     </div>
   );
