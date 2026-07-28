@@ -2107,22 +2107,22 @@ function LinhaTarefaWork({t,onToggle,onStatus,onDelete}){
   const feita=t.status==="Concluído";
   return(
     <div onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)}
-      style={{display:"flex",alignItems:"flex-start",gap:12,padding:14,
+      style={{display:"flex",alignItems:"flex-start",gap:10,padding:"10px 12px",
         border:`1px solid ${h?"#d1d5db":"#e5e7eb"}`,
         borderLeft:`4px solid ${feita?"#d1d5db":COR_URGENCIA_WORK[t.urgencia]||"#111"}`,
-        borderRadius:10,background:feita?"#fafafa":"#fff",opacity:t.status==="Cancelado"?0.5:1,
+        borderRadius:9,background:feita?"#fafafa":"#fff",opacity:t.status==="Cancelado"?0.5:1,
         transition:"all 0.15s"}}>
-      <button onClick={()=>onToggle(t)} style={{width:22,height:22,borderRadius:6,
+      <button onClick={()=>onToggle(t)} style={{width:20,height:20,borderRadius:6,
         border:`2px solid ${feita?"#16a34a":"#d1d5db"}`,background:feita?"#16a34a":"none",
         cursor:"pointer",flexShrink:0,marginTop:1,display:"flex",alignItems:"center",
-        justifyContent:"center",color:"#fff",fontSize:12}}>{feita?"✓":""}</button>
-      <div style={{flex:1,minWidth:0}}>
-        <div style={{fontWeight:700,fontSize:14,color:"#111",
+        justifyContent:"center",color:"#fff",fontSize:11}}>{feita?"✓":""}</button>
+      <div style={{flex:1,minWidth:0,textAlign:"left"}}>
+        <div style={{fontWeight:700,fontSize:13.5,color:"#111",textAlign:"left",
           textDecoration:feita?"line-through":"none"}}>
           {ICONE_AREA_WORK[t.categoria]} {t.titulo}
         </div>
-        {t.descricao&&<div style={{fontSize:12,color:"#9ca3af",marginTop:3}}>{t.descricao}</div>}
-        <div style={{display:"flex",gap:10,marginTop:6,flexWrap:"wrap",alignItems:"center"}}>
+        {t.descricao&&<div style={{fontSize:12,color:"#9ca3af",marginTop:2,textAlign:"left"}}>{t.descricao}</div>}
+        <div style={{display:"flex",gap:9,marginTop:5,flexWrap:"wrap",alignItems:"center"}}>
           <span style={{fontSize:11,color:COR_URGENCIA_WORK[t.urgencia],fontWeight:700}}>● {t.urgencia}</span>
           {t.prazo&&<span style={{fontSize:11,color:atrasada?"#dc2626":"#9ca3af",fontWeight:atrasada?700:400}}>
             📅 {fmtData(t.prazo)}{atrasada?" · atrasada":""}</span>}
@@ -2140,6 +2140,28 @@ function LinhaTarefaWork({t,onToggle,onStatus,onDelete}){
         {STATUS_WORK.map(s=><option key={s} value={s}>{s}</option>)}
       </select>
       <Btn v="danger" onClick={()=>onDelete(t.id)}>✕</Btn>
+    </div>
+  );
+}
+
+function GrupoAreaWork({cat,tarefas,onToggle,onStatus,onDelete}){
+  const [expandido,setExpandido]=useState(false);
+  const LIMITE=5;
+  const visiveis=expandido?tarefas:tarefas.slice(0,LIMITE);
+  const resto=tarefas.length-LIMITE;
+  return(
+    <div>
+      <div style={{fontSize:12,fontWeight:800,color:"#6b7280",textTransform:"uppercase",
+        letterSpacing:"0.5px",marginBottom:8}}>{ICONE_AREA_WORK[cat]} {cat} <span style={{color:"#d1d5db"}}>({tarefas.length})</span></div>
+      <div style={{display:"flex",flexDirection:"column",gap:6}}>
+        {visiveis.map(t=><LinhaTarefaWork key={t.id} t={t} onToggle={onToggle} onStatus={onStatus} onDelete={onDelete}/>)}
+      </div>
+      {resto>0&&(
+        <button onClick={()=>setExpandido(e=>!e)} style={{background:"none",border:"none",
+          color:"#5c2030",fontSize:12,fontWeight:700,cursor:"pointer",padding:"8px 2px 0"}}>
+          {expandido?"Mostrar menos":`Mostrar mais (+${resto})`}
+        </button>
+      )}
     </div>
   );
 }
@@ -2283,15 +2305,7 @@ function PageTarefas({db,setDb}){
             {CATEGORIAS_WORK.map(cat=>{
               const doGrupo=ordenarTarefasPorPrioridade(filtradas.filter(t=>t.categoria===cat));
               if(doGrupo.length===0)return null;
-              return(
-                <div key={cat}>
-                  <div style={{fontSize:12,fontWeight:800,color:"#6b7280",textTransform:"uppercase",
-                    letterSpacing:"0.5px",marginBottom:8}}>{ICONE_AREA_WORK[cat]} {cat} <span style={{color:"#d1d5db"}}>({doGrupo.length})</span></div>
-                  <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                    {doGrupo.map(t=><LinhaTarefaWork key={t.id} t={t} onToggle={toggle} onStatus={mudarStatus} onDelete={del}/>)}
-                  </div>
-                </div>
-              );
+              return <GrupoAreaWork key={cat} cat={cat} tarefas={doGrupo} onToggle={toggle} onStatus={mudarStatus} onDelete={del}/>;
             })}
           </div>
         )}
@@ -3157,8 +3171,8 @@ export default function App(){
     const style=document.createElement("style");
     style.id=id;
     style.textContent=`
-      html,body{margin:0;padding:0;height:100%;width:100%;overflow:hidden;}
-      #root,#app,body>div:first-child{height:100%;width:100%;}
+      html,body{margin:0;padding:0;height:100%;width:100%;overflow:hidden;text-align:left;}
+      #root,#app,body>div:first-child{height:100%;width:100%;text-align:left;}
       *{box-sizing:border-box;}
     `;
     document.head.appendChild(style);
