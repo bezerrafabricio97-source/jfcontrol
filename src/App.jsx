@@ -36,17 +36,24 @@ const ST_FORN = ["Lista de Espera","Pedido Feito","Chegou - Estoque","Chegou - V
 const CATS_DESP = ["Produto / Estoque","Taxa / Importação","Ferramenta / Software","Frete","Outros"];
 const CATS_REC = ["Venda","Aporte de Sócio","Outros"];
 const CATS_TAR = ["Pedido","Estoque","Financeiro","Cliente","Outro"];
-// ── WORK (antiga "Tarefas") — categorias, urgência e status do centro operacional ──
-const CATEGORIAS_WORK = ["Marketing","Operacional","Financeiro","Estoque","Aplicativo","Conteúdo","Compras"];
+// ── WORK — Centro Operacional: áreas fixas, urgência, status e recorrência ──
+const CATEGORIAS_WORK = ["Marketing","Comercial","CRM","Operacional","Financeiro","Sistema","Estratégia"];
+const ICONE_AREA_WORK = {Marketing:"📣",Comercial:"🛒",CRM:"👥",Operacional:"⚙️",
+  Financeiro:"💰",Sistema:"💻","Estratégia":"🎯"};
 const URGENCIAS_WORK = ["Crítica","Alta","Média","Baixa"];
 const STATUS_WORK = ["Pendente","Em Andamento","Concluído","Cancelado"];
+const RECORRENCIAS_WORK = ["Nenhuma","Diária","Semanal","Mensal","Personalizada"];
 const ORDEM_URGENCIA_WORK = {"Crítica":0,"Alta":1,"Média":2,"Baixa":3};
 const COR_URGENCIA_WORK = {"Crítica":"#dc2626","Alta":"#ea580c","Média":"#ca8a04","Baixa":"#9ca3af"};
 const COR_STATUS_WORK = {"Pendente":"#9ca3af","Em Andamento":"#2563eb","Concluído":"#16a34a","Cancelado":"#d1d5db"};
 // Compat: categorias da antiga tela "Tarefas" (Pedido/Estoque/Financeiro/Cliente/Outro)
 // migram pro novo conjunto de categorias do Work.
-const MAP_CATEGORIA_TAREFA_ANTIGA={Pedido:"Operacional",Estoque:"Estoque",Financeiro:"Financeiro",
-  Cliente:"Operacional",Outro:"Operacional"};
+const MAP_CATEGORIA_TAREFA_ANTIGA={Pedido:"Operacional",Estoque:"Operacional",Financeiro:"Financeiro",
+  Cliente:"Comercial",Outro:"Operacional"};
+// Compat: primeira versão das áreas do Work (Marketing/Operacional/Financeiro/
+// Estoque/Aplicativo/Conteúdo/Compras) migra pro novo conjunto de 7 áreas fixas.
+const MAP_AREA_WORK_V1_V2={Marketing:"Marketing",Operacional:"Operacional",Financeiro:"Financeiro",
+  Estoque:"Operacional",Aplicativo:"Sistema","Conteúdo":"Marketing",Compras:"Operacional"};
 // Uma tarefa "merece atenção" na Central quando é urgente (Alta/Crítica) e ainda
 // está pendente. Concluída ou de baixa urgência não aparece lá — ela só aparece no Work.
 function tarefaMereceAtencao(t){
@@ -58,6 +65,72 @@ function ordenarTarefasPorPrioridade(lista){
     if(u!==0)return u;
     return(a.prazo||"9999-99-99").localeCompare(b.prazo||"9999-99-99");
   });
+}
+// A Missão do Dia nunca fica guardada à parte — é sempre a tarefa mais prioritária
+// (Crítica/Alta), com prazo vencendo hoje ou já vencido, ainda em aberto. Se não
+// houver nenhuma, cai pro objetivo manual definido no Work (fallback).
+function missaoAutomaticaDoDia(db){
+  const candidatas=db.tarefas.filter(t=>
+    (t.status==="Pendente"||t.status==="Em Andamento")&&
+    (t.urgencia==="Crítica"||t.urgencia==="Alta")&&t.prazo&&t.prazo<=hoje());
+  return ordenarTarefasPorPrioridade(candidatas)[0]||null;
+}
+// Calcula a próxima data de uma tarefa recorrente a partir da data-base.
+function proximaOcorrencia(dataBase,recorrencia,recorrenciaDias){
+  const d=new Date(`${dataBase||hoje()}T00:00:00`);
+  if(recorrencia==="Diária")d.setDate(d.getDate()+1);
+  else if(recorrencia==="Semanal")d.setDate(d.getDate()+7);
+  else if(recorrencia==="Mensal")d.setMonth(d.getMonth()+1);
+  else if(recorrencia==="Personalizada")d.setDate(d.getDate()+(Number(recorrenciaDias)||1));
+  else return null;
+  return d.toISOString().slice(0,10);
+}
+// ── Missões automáticas geradas por outros módulos ──────────────
+// Cada regra só gera UMA vez por evento (marca com origemKey e confere se já
+// existe antes de criar de novo — nunca duplica o mesmo aviso).
+function gerarMissoesAutomaticas(db){
+  const propostas=[];
+  const existeQualquer=key=>db.tarefas.some(t=>t.origemKey===key);
+  const existeAberta=key=>db.tarefas.some(t=>t.origemKey===key&&(t.status==="Pendente"||t.status==="Em Andamento"));
+
+  // Pedido entregue → pós-venda alguns dias depois
+  db.pedidos.filter(p=>!isEstoque(p)&&p.status==="Entregue"&&p.data).forEach(p=>{
+    const dias=diasDesde(p.data);
+    const key=`posvenda-${p.id}`;
+    if(dias!==null&&dias>=3&&!existeQualquer(key)){
+      const cli=db.clientes.find(c=>clienteCorrespondePedido(c,p));
+      propostas.push({titulo:`Pós-venda: ${p.cliente||"cliente"}`,
+        descricao:"Perguntar se chegou tudo bem e se o cliente gostou.",
+        categoria:"CRM",urgencia:"Média",prazo:hoje(),status:"Pendente",responsavel:"",
+        recorrencia:"Nenhuma",clienteId:cli?.id,clienteNome:cli?.nome||p.cliente,
+        origemKey:key,origemAuto:true});
+    }
+  });
+
+  // Estoque crítico → gerar compra (só enquanto não houver uma tarefa em aberto pra esse produto)
+  db.produtos.filter(p=>(p.qtd||0)<=1).forEach(p=>{
+    const key=`compra-estoque-${p.id}`;
+    if(!existeAberta(key)){
+      const nome=`${p.time||""} ${p.uniforme||""} ${p.tamanho||""}`.replace(/\s+/g," ").trim();
+      propostas.push({titulo:`Comprar mais: ${nome||"produto"}`,
+        descricao:"Estoque crítico (1 unidade ou menos).",
+        categoria:"Operacional",urgencia:"Alta",prazo:hoje(),status:"Pendente",responsavel:"",
+        recorrencia:"Nenhuma",origemKey:key,origemAuto:true});
+    }
+  });
+
+  // Cliente recorrente (3+ compras) → oferecer novidade — dispara uma vez por cliente
+  db.clientes.forEach(c=>{
+    const key=`oferta-${c.id}`;
+    if(pedidosDoCliente(c,db.pedidos).length>=3&&!existeQualquer(key)){
+      propostas.push({titulo:`Oferecer novidade para ${c.nome}`,
+        descricao:"Cliente recorrente — bom momento pra avisar de um lançamento novo.",
+        categoria:"Comercial",urgencia:"Média",prazo:hoje(),status:"Pendente",responsavel:"",
+        recorrencia:"Nenhuma",clienteId:c.id,clienteNome:c.nome,origemKey:key,origemAuto:true});
+    }
+  });
+
+  return propostas;
 }
 const KANBAN = [
   {key:"A Fazer",label:"PRODUZIR",icon:"📦",color:"#f97316"},
@@ -240,18 +313,27 @@ function migrarDB(db){
   out.caixa=out.caixa||[];
   out.clientes=Array.isArray(out.clientes)?out.clientes:[];
   // Migra tarefas do formato antigo (feita/prioridade/data) pro novo modelo do Work
-  // (status/urgência/prazo/categoria/responsável). Tarefa que já está no formato novo
-  // (tem status válido) não é tocada de novo.
+  // (status/urgência/prazo/categoria/responsável), remapeia áreas antigas pro novo
+  // conjunto fixo de 7 áreas, e garante o campo de recorrência em tarefas antigas.
   out.tarefas=(out.tarefas||[]).map(t=>{
-    if(STATUS_WORK.includes(t.status))return t;
-    return{
-      id:t.id,titulo:t.titulo||"",descricao:t.descricao||"",
-      categoria:MAP_CATEGORIA_TAREFA_ANTIGA[t.categoria]||"Operacional",
-      urgencia:t.prioridade==="Alta"?"Alta":t.prioridade==="Baixa"?"Baixa":"Média",
-      prazo:t.data||hoje(),
-      status:t.feita?"Concluído":"Pendente",
-      responsavel:t.responsavel||"",
-    };
+    let novo=t;
+    if(!STATUS_WORK.includes(t.status)){
+      novo={
+        id:t.id,titulo:t.titulo||"",descricao:t.descricao||"",
+        categoria:MAP_CATEGORIA_TAREFA_ANTIGA[t.categoria]||"Operacional",
+        urgencia:t.prioridade==="Alta"?"Alta":t.prioridade==="Baixa"?"Baixa":"Média",
+        prazo:t.data||hoje(),
+        status:t.feita?"Concluído":"Pendente",
+        responsavel:t.responsavel||"",
+      };
+    }
+    if(!CATEGORIAS_WORK.includes(novo.categoria)){
+      novo={...novo,categoria:MAP_AREA_WORK_V1_V2[novo.categoria]||"Operacional"};
+    }
+    if(!RECORRENCIAS_WORK.includes(novo.recorrencia)){
+      novo={...novo,recorrencia:"Nenhuma",recorrenciaDias:novo.recorrenciaDias||null};
+    }
+    return novo;
   });
   out.pedidosFornecedor=out.pedidosFornecedor||[];
   out.meta={...DB0.meta,...(out.meta||{})};
@@ -741,8 +823,16 @@ function CentralComando({db,setDb,onNavigate,emTransp,atrasados,estoqueCritico,v
   // Pedidos, Estoque, Metas). Editar acontece nesses módulos, nunca aqui.
   const tarefasUrgentes=ordenarTarefasPorPrioridade(db.tarefas.filter(tarefaMereceAtencao));
   const proximaTarefa=tarefasUrgentes[0]||null;
-  const concluirTarefa=id=>setDb(prev=>({...prev,
-    tarefas:prev.tarefas.map(t=>t.id===id?{...t,status:"Concluído"}:t)}));
+  const missaoAuto=missaoAutomaticaDoDia(db);
+  const concluirTarefa=t=>setDb(prev=>{
+    let tarefas=prev.tarefas.map(x=>x.id===t.id?{...x,status:"Concluído"}:x);
+    let nextId=prev.nextId;
+    if(t.recorrencia&&t.recorrencia!=="Nenhuma"){
+      nextId=nextId+1;
+      tarefas=[...tarefas,{...t,id:nextId,status:"Pendente",prazo:proximaOcorrencia(t.prazo,t.recorrencia,t.recorrenciaDias)}];
+    }
+    return{...prev,tarefas,nextId};
+  });
   const foco=resolverFocoHoje({atrasados,estoqueCritico,emTransp});
   const [hEmT,setHEmT]=useState(false);const [hAtr,setHAtr]=useState(false);const [hEst,setHEst]=useState(false);
   const linhaPendencia=(label,valor,cor,hover,setHover,onClick)=>(
@@ -772,17 +862,18 @@ function CentralComando({db,setDb,onNavigate,emTransp,atrasados,estoqueCritico,v
           </div>
         </div>
 
-        {/* Missão do dia — definida no Work, aqui é só leitura */}
+        {/* Missão do dia — automática (tarefa Crítica/Alta vencendo) quando existir;
+            senão cai pro objetivo manual, que é editado no Work */}
         <div style={{background:"#262233",borderRadius:10,padding:"14px 16px",gridColumn:"1 / -1"}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6,
             cursor:"pointer"}} onClick={()=>onNavigate&&onNavigate("tarefas")}>
             <span style={{fontSize:11,color:"#a8a5b3",textTransform:"uppercase",letterSpacing:"0.4px"}}>
               🚩 Missão do dia
             </span>
-            <span style={{fontSize:10,color:"#6b6878"}}>editar no Work →</span>
+            <span style={{fontSize:10,color:"#6b6878"}}>{missaoAuto?"🤖 automática":"editar no Work →"}</span>
           </div>
           <div style={{fontSize:14,color:"#fff",fontWeight:500}}>
-            {db.centralComando.missao||"Nenhuma missão definida ainda"}
+            {missaoAuto?missaoAuto.titulo:(db.centralComando.missao||"Nenhuma missão definida ainda")}
           </div>
         </div>
 
@@ -803,7 +894,7 @@ function CentralComando({db,setDb,onNavigate,emTransp,atrasados,estoqueCritico,v
                 <span style={{width:7,height:7,borderRadius:"50%",flexShrink:0,
                   background:COR_URGENCIA_WORK[proximaTarefa.urgencia]}}/>
                 <span style={{flex:1,fontSize:14,color:"#fff",fontWeight:600}}>{proximaTarefa.titulo}</span>
-                <button onClick={()=>concluirTarefa(proximaTarefa.id)} style={{background:"#274d3a",color:"#7ee0a8",
+                <button onClick={()=>concluirTarefa(proximaTarefa)} style={{background:"#274d3a",color:"#7ee0a8",
                   border:"none",borderRadius:5,padding:"4px 11px",fontSize:11,fontWeight:700,
                   cursor:"pointer",flexShrink:0}}>✓ Concluir</button>
               </div>
@@ -2021,23 +2112,28 @@ function LinhaTarefaWork({t,onToggle,onStatus,onDelete}){
         borderLeft:`4px solid ${feita?"#d1d5db":COR_URGENCIA_WORK[t.urgencia]||"#111"}`,
         borderRadius:10,background:feita?"#fafafa":"#fff",opacity:t.status==="Cancelado"?0.5:1,
         transition:"all 0.15s"}}>
-      <button onClick={()=>onToggle(t.id)} style={{width:22,height:22,borderRadius:6,
+      <button onClick={()=>onToggle(t)} style={{width:22,height:22,borderRadius:6,
         border:`2px solid ${feita?"#16a34a":"#d1d5db"}`,background:feita?"#16a34a":"none",
         cursor:"pointer",flexShrink:0,marginTop:1,display:"flex",alignItems:"center",
         justifyContent:"center",color:"#fff",fontSize:12}}>{feita?"✓":""}</button>
       <div style={{flex:1,minWidth:0}}>
         <div style={{fontWeight:700,fontSize:14,color:"#111",
-          textDecoration:feita?"line-through":"none"}}>{t.titulo}</div>
+          textDecoration:feita?"line-through":"none"}}>
+          {ICONE_AREA_WORK[t.categoria]} {t.titulo}
+        </div>
         {t.descricao&&<div style={{fontSize:12,color:"#9ca3af",marginTop:3}}>{t.descricao}</div>}
         <div style={{display:"flex",gap:10,marginTop:6,flexWrap:"wrap",alignItems:"center"}}>
           <span style={{fontSize:11,color:COR_URGENCIA_WORK[t.urgencia],fontWeight:700}}>● {t.urgencia}</span>
           {t.prazo&&<span style={{fontSize:11,color:atrasada?"#dc2626":"#9ca3af",fontWeight:atrasada?700:400}}>
             📅 {fmtData(t.prazo)}{atrasada?" · atrasada":""}</span>}
+          {t.recorrencia&&t.recorrencia!=="Nenhuma"&&
+            <span style={{fontSize:11,color:"#2563eb"}}>🔁 {t.recorrencia}</span>}
           {t.responsavel&&<span style={{fontSize:11,color:"#9ca3af"}}>👤 {t.responsavel}</span>}
           {t.clienteNome&&<span style={{fontSize:11,color:"#5c2030",fontWeight:600}}>🧾 {t.clienteNome}</span>}
+          {t.origemAuto&&<span style={{fontSize:11,color:"#9333ea"}}>🤖 automática</span>}
         </div>
       </div>
-      <select value={t.status} onChange={e=>onStatus(t.id,e.target.value)}
+      <select value={t.status} onChange={e=>onStatus(t,e.target.value)}
         style={{fontSize:11,fontWeight:700,color:COR_STATUS_WORK[t.status],background:"#f9fafb",
           border:`1px solid ${COR_STATUS_WORK[t.status]}55`,borderRadius:20,padding:"4px 8px",
           cursor:"pointer",flexShrink:0}}>
@@ -2053,7 +2149,7 @@ function PageTarefas({db,setDb}){
   const [abaStatus,setAbaStatus]=useState("todas");
   const [catFiltro,setCatFiltro]=useState("Todas");
   const vazio={titulo:"",descricao:"",categoria:"Operacional",urgencia:"Média",prazo:"",
-    status:"Pendente",responsavel:""};
+    status:"Pendente",responsavel:"",recorrencia:"Nenhuma",recorrenciaDias:7};
   const [f,setF]=useState(vazio);
   const hj=hoje();
 
@@ -2061,6 +2157,7 @@ function PageTarefas({db,setDb}){
   const atrasadas=db.tarefas.filter(t=>t.status!=="Concluído"&&t.status!=="Cancelado"&&t.prazo&&t.prazo<hj).length;
   const emAndamento=db.tarefas.filter(t=>t.status==="Em Andamento").length;
   const concluidas=db.tarefas.filter(t=>t.status==="Concluído").length;
+  const missaoAuto=missaoAutomaticaDoDia(db);
 
   const ABAS=[
     {k:"todas",l:`Todas (${db.tarefas.length})`},
@@ -2073,25 +2170,63 @@ function PageTarefas({db,setDb}){
   const filtradas=db.tarefas.filter(t=>
     (abaStatus==="todas"||t.status===abaStatus)&&(catFiltro==="Todas"||t.categoria===catFiltro));
 
+  // Painel operacional: uma mini-visão por área fixa, sempre visível — clique
+  // numa área filtra a lista detalhada abaixo, evitando lista longa e única.
+  const painelAreas=CATEGORIAS_WORK.map(area=>({
+    area,
+    tarefas:ordenarTarefasPorPrioridade(db.tarefas.filter(t=>t.categoria===area&&t.status!=="Concluído"&&t.status!=="Cancelado")),
+  }));
+
   const salv=()=>{
     if(!f.titulo.trim())return alert("Informe o título.");
     setDb(prev=>{const id=prev.nextId+1;return{...prev,nextId:id,tarefas:[...prev.tarefas,{...f,id}]};});
     setF(vazio);setModal(false);
   };
-  const toggle=id=>setDb(prev=>({...prev,tarefas:prev.tarefas.map(t=>
-    t.id===id?{...t,status:t.status==="Concluído"?"Pendente":"Concluído"}:t)}));
-  const mudarStatus=(id,status)=>setDb(prev=>({...prev,tarefas:prev.tarefas.map(t=>t.id===id?{...t,status}:t)}));
+  // Concluir com consciência de recorrência: gera a próxima ocorrência automática.
+  const concluir=t=>setDb(prev=>{
+    let tarefas=prev.tarefas.map(x=>x.id===t.id?{...x,status:"Concluído"}:x);
+    let nextId=prev.nextId;
+    if(t.recorrencia&&t.recorrencia!=="Nenhuma"){
+      const prox=proximaOcorrencia(t.prazo,t.recorrencia,t.recorrenciaDias);
+      nextId=nextId+1;
+      tarefas=[...tarefas,{...t,id:nextId,status:"Pendente",prazo:prox}];
+    }
+    return{...prev,tarefas,nextId};
+  });
+  const toggle=t=>{
+    if(t.status==="Concluído"){
+      setDb(prev=>({...prev,tarefas:prev.tarefas.map(x=>x.id===t.id?{...x,status:"Pendente"}:x)}));
+    } else concluir(t);
+  };
+  const mudarStatus=(t,status)=>{
+    if(status==="Concluído")concluir(t);
+    else setDb(prev=>({...prev,tarefas:prev.tarefas.map(x=>x.id===t.id?{...x,status}:x)}));
+  };
   const del=id=>{if(!window.confirm("Excluir?"))return;setDb(prev=>({...prev,tarefas:prev.tarefas.filter(t=>t.id!==id)}));};
   const salvarMissao=v=>setDb(prev=>({...prev,centralComando:{...prev.centralComando,missao:v}}));
 
   return(
     <div>
       <div style={{background:"#1D1A28",borderRadius:12,padding:"14px 18px",marginBottom:16}}>
-        <div style={{fontSize:11,color:"#a8a5b3",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.4px"}}>
-          🚩 Missão do dia <span style={{textTransform:"none",fontWeight:400,color:"#6b6878"}}>— aparece na Central</span>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
+          <span style={{fontSize:11,color:"#a8a5b3",textTransform:"uppercase",letterSpacing:"0.4px"}}>
+            🚩 Missão do dia <span style={{textTransform:"none",fontWeight:400,color:"#6b6878"}}>— aparece na Central</span>
+          </span>
+          {missaoAuto&&<span style={{fontSize:10,color:"#9333ea",fontWeight:700}}>🤖 automática</span>}
         </div>
-        <CampoEditavel valor={db.centralComando.missao} placeholder="Qual sua prioridade hoje?"
-          onSalvar={salvarMissao}/>
+        {missaoAuto?(
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <span style={{width:7,height:7,borderRadius:"50%",flexShrink:0,
+              background:COR_URGENCIA_WORK[missaoAuto.urgencia]}}/>
+            <span style={{flex:1,fontSize:14,color:"#fff",fontWeight:600}}>{missaoAuto.titulo}</span>
+            <button onClick={()=>concluir(missaoAuto)} style={{background:"#274d3a",color:"#7ee0a8",
+              border:"none",borderRadius:5,padding:"4px 11px",fontSize:11,fontWeight:700,
+              cursor:"pointer",flexShrink:0}}>✓ Concluir</button>
+          </div>
+        ):(
+          <CampoEditavel valor={db.centralComando.missao} placeholder="Qual sua prioridade hoje?"
+            onSalvar={salvarMissao}/>
+        )}
       </div>
 
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:12,marginBottom:16}}>
@@ -2101,11 +2236,41 @@ function PageTarefas({db,setDb}){
         <KPI label="Concluídas" value={concluidas} color="#16a34a"/>
       </div>
 
+      {/* Painel operacional — uma área por card, foco em execução rápida */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:10,marginBottom:16}}>
+        {painelAreas.map(({area,tarefas})=>(
+          <div key={area} onClick={()=>setCatFiltro(catFiltro===area?"Todas":area)}
+            style={{background:"#fff",border:`1px solid ${catFiltro===area?"#5c2030":"#e5e7eb"}`,
+              borderRadius:10,padding:"12px 14px",cursor:"pointer",transition:"all 0.15s"}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+              <span style={{fontSize:12,fontWeight:800,color:"#111"}}>{ICONE_AREA_WORK[area]} {area}</span>
+              <span style={{fontSize:11,fontWeight:700,color:tarefas.length>0?"#5c2030":"#d1d5db",
+                background:"#f9fafb",borderRadius:10,padding:"1px 7px"}}>{tarefas.length}</span>
+            </div>
+            {tarefas.length===0?(
+              <div style={{fontSize:11,color:"#d1d5db"}}>Nada pendente</div>
+            ):(
+              <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                {tarefas.slice(0,3).map(t=>(
+                  <div key={t.id} style={{display:"flex",alignItems:"center",gap:6}}>
+                    <span style={{width:5,height:5,borderRadius:"50%",flexShrink:0,
+                      background:COR_URGENCIA_WORK[t.urgencia]}}/>
+                    <span style={{fontSize:11.5,color:"#374151",whiteSpace:"nowrap",overflow:"hidden",
+                      textOverflow:"ellipsis"}}>{t.titulo}</span>
+                  </div>
+                ))}
+                {tarefas.length>3&&<div style={{fontSize:10.5,color:"#9ca3af"}}>+{tarefas.length-3} mais</div>}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
       <Section action={
         <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
           <div style={{width:170}}>
             <Sel value={catFiltro} onChange={e=>setCatFiltro(e.target.value)}>
-              <option value="Todas">Todas as categorias</option>
+              <option value="Todas">Todas as áreas</option>
               {CATEGORIAS_WORK.map(c=><option key={c} value={c}>{c}</option>)}
             </Sel>
           </div>
@@ -2121,7 +2286,7 @@ function PageTarefas({db,setDb}){
               return(
                 <div key={cat}>
                   <div style={{fontSize:12,fontWeight:800,color:"#6b7280",textTransform:"uppercase",
-                    letterSpacing:"0.5px",marginBottom:8}}>{cat} <span style={{color:"#d1d5db"}}>({doGrupo.length})</span></div>
+                    letterSpacing:"0.5px",marginBottom:8}}>{ICONE_AREA_WORK[cat]} {cat} <span style={{color:"#d1d5db"}}>({doGrupo.length})</span></div>
                   <div style={{display:"flex",flexDirection:"column",gap:8}}>
                     {doGrupo.map(t=><LinhaTarefaWork key={t.id} t={t} onToggle={toggle} onStatus={mudarStatus} onDelete={del}/>)}
                   </div>
@@ -2138,13 +2303,18 @@ function PageTarefas({db,setDb}){
             placeholder="O que precisa fazer?" autoFocus/></Field>
           <Field label="Descrição"><Inp value={f.descricao} onChange={e=>setF(p=>({...p,descricao:e.target.value}))}
             placeholder="Detalhes (opcional)"/></Field>
-          <Field label="Categoria" third><Sel value={f.categoria} onChange={e=>setF(p=>({...p,categoria:e.target.value}))}>
+          <Field label="Área" third><Sel value={f.categoria} onChange={e=>setF(p=>({...p,categoria:e.target.value}))}>
             {CATEGORIAS_WORK.map(c=><option key={c}>{c}</option>)}</Sel></Field>
-          <Field label="Urgência" third><Sel value={f.urgencia} onChange={e=>setF(p=>({...p,urgencia:e.target.value}))}>
+          <Field label="Prioridade" third><Sel value={f.urgencia} onChange={e=>setF(p=>({...p,urgencia:e.target.value}))}>
             {URGENCIAS_WORK.map(u=><option key={u}>{u}</option>)}</Sel></Field>
-          <Field label="Prazo" third><Inp type="date" value={f.prazo} onChange={e=>setF(p=>({...p,prazo:e.target.value}))}/></Field>
-          <Field label="Status" half><Sel value={f.status} onChange={e=>setF(p=>({...p,status:e.target.value}))}>
+          <Field label="Vencimento" third><Inp type="date" value={f.prazo} onChange={e=>setF(p=>({...p,prazo:e.target.value}))}/></Field>
+          <Field label="Status" third><Sel value={f.status} onChange={e=>setF(p=>({...p,status:e.target.value}))}>
             {STATUS_WORK.map(s=><option key={s}>{s}</option>)}</Sel></Field>
+          <Field label="Recorrência" third><Sel value={f.recorrencia} onChange={e=>setF(p=>({...p,recorrencia:e.target.value}))}>
+            {RECORRENCIAS_WORK.map(r=><option key={r}>{r}</option>)}</Sel></Field>
+          {f.recorrencia==="Personalizada"&&
+            <Field label="A cada quantos dias" third><Inp type="number" min="1" value={f.recorrenciaDias}
+              onChange={e=>setF(p=>({...p,recorrenciaDias:Number(e.target.value)||1}))}/></Field>}
           <Field label="Responsável (em breve)" half><Inp value={f.responsavel}
             onChange={e=>setF(p=>({...p,responsavel:e.target.value}))} placeholder="Ainda de uso pessoal"/></Field>
         </div>
@@ -2460,7 +2630,7 @@ function PageClienteDetalhe({cliente,db,setDb,onVoltar,onNavigate}){
   const criarTarefa=f=>{
     setDb(prev=>{const id=prev.nextId+1;return{...prev,nextId:id,tarefas:[...prev.tarefas,
       {id,titulo:f.titulo,descricao:"",categoria:f.categoria,urgencia:f.urgencia,prazo:f.prazo,
-        status:"Pendente",responsavel:"",clienteId:cliente.id,clienteNome:cliente.nome}]};});
+        status:"Pendente",responsavel:"",recorrencia:"Nenhuma",clienteId:cliente.id,clienteNome:cliente.nome}]};});
     setModalTarefa(false);
   };
 
@@ -2962,6 +3132,22 @@ export default function App(){
   useEffect(()=>{try{localStorage.setItem("t11_escuro",escuro?"1":"0");}catch(_){}},[escuro]);
 
   useEffect(()=>{saveDB(db);},[db]);
+
+  // Motor de missões automáticas: outros módulos (Pedidos, Estoque, CRM) geram
+  // tarefas no Work sozinhos quando algo relevante acontece. Cada regra só
+  // dispara uma vez por evento (checagem por origemKey dentro de setDb, contra
+  // o estado mais atual — nunca duplica).
+  useEffect(()=>{
+    const propostas=gerarMissoesAutomaticas(db);
+    if(propostas.length===0)return;
+    setDb(prev=>{
+      const faltantes=propostas.filter(p=>!prev.tarefas.some(t=>t.origemKey===p.origemKey));
+      if(faltantes.length===0)return prev;
+      let id=prev.nextId;
+      const comId=faltantes.map(t=>({...t,id:++id}));
+      return{...prev,nextId:id,tarefas:[...prev.tarefas,...comId]};
+    });
+  },[db]);
 
   // Garante que a página ocupe 100% da tela e role corretamente,
   // sem precisar editar o index.html/CSS global do projeto.
