@@ -34,8 +34,22 @@ const MAP_AREA_WORK_V1_V2={Marketing:"Marketing",Operacional:"Operacional",Finan
   Estoque:"Operacional",Aplicativo:"Sistema","Conteúdo":"Marketing",Compras:"Operacional"};
 // Uma tarefa "merece atenção" na Central quando é urgente (Alta/Crítica) e ainda
 // está pendente. Concluída ou de baixa urgência não aparece lá — ela só aparece no Work.
+// Regra de visibilidade na Central (não é mais só "Alta/Crítica + Pendente"):
+// - Crítica: aparece sempre, seja qual for o status em aberto.
+// - Alta: aparece quando está atrasada OU vencendo em até 2 dias.
+// - Mostrar na Central = Sim (flag manual): aparece independente de tudo.
+// - Média/Baixa: nunca aparecem sozinhas — só se marcadas manualmente.
 function tarefaMereceAtencao(t){
-  return(t.urgencia==="Alta"||t.urgencia==="Crítica")&&t.status==="Pendente";
+  if(t.status==="Concluído"||t.status==="Cancelado")return false;
+  if(t.mostrarNaCentral)return true;
+  if(t.urgencia==="Crítica")return true;
+  if(t.urgencia==="Alta"){
+    if(!t.prazo)return false;
+    const atrasada=t.prazo<hoje();
+    const diasAte=-diasDesde(t.prazo);
+    return atrasada||(diasAte>=0&&diasAte<=2);
+  }
+  return false;
 }
 function ordenarTarefasPorPrioridade(lista){
   return[...lista].sort((a,b)=>{
@@ -52,6 +66,32 @@ function missaoAutomaticaDoDia(db){
     (t.status==="Pendente"||t.status==="Em Andamento")&&
     (t.urgencia==="Crítica"||t.urgencia==="Alta")&&t.prazo&&t.prazo<=hoje());
   return ordenarTarefasPorPrioridade(candidatas)[0]||null;
+}
+// Acrescenta um evento ao histórico da tarefa (nunca apaga o que já tinha).
+function registrarHistorico(tarefa,texto){
+  return[...(tarefa.historico||[]),{data:hoje(),texto}];
+}
+// Segunda a domingo da semana atual, no formato usado pela faixa "Semana" do Work.
+function diasDaSemanaAtual(){
+  const labels=["SEG","TER","QUA","QUI","SEX","SÁB","DOM"];
+  const hoje_d=new Date();
+  const diaSemana=hoje_d.getDay(); // 0=Dom..6=Sáb
+  const diffSeg=diaSemana===0?-6:1-diaSemana;
+  const seg=new Date(hoje_d);seg.setDate(hoje_d.getDate()+diffSeg);
+  return labels.map((label,i)=>{
+    const d=new Date(seg);d.setDate(seg.getDate()+i);
+    return{label,data:d.toISOString().slice(0,10)};
+  });
+}
+// "Hoje" / "Amanhã" / dia da semana por extenso — usado nas Próximas Ações.
+function rotuloDia(dataStr){
+  const hj=hoje();
+  if(dataStr===hj)return"Hoje";
+  const d=new Date(dataStr+"T00:00:00");
+  const amanha=new Date();amanha.setDate(amanha.getDate()+1);
+  if(dataStr===amanha.toISOString().slice(0,10))return"Amanhã";
+  const nome=d.toLocaleDateString("pt-BR",{weekday:"long"});
+  return nome.charAt(0).toUpperCase()+nome.slice(1);
 }
 // Calcula a próxima data de uma tarefa recorrente a partir da data-base.
 function proximaOcorrencia(dataBase,recorrencia,recorrenciaDias){
@@ -495,6 +535,13 @@ function migrarDB(db){
     }
     if(!RECORRENCIAS_WORK.includes(novo.recorrencia)){
       novo={...novo,recorrencia:"Nenhuma",recorrenciaDias:novo.recorrenciaDias||null};
+    }
+    // Campos novos (objetivo, projeto relacionado, favorito, override de Central,
+    // próxima ação, histórico) — tarefa antiga que nunca teve isso ganha o padrão.
+    if(novo.historico===undefined){
+      novo={...novo,objetivo:novo.objetivo||"",projetoRelacionado:novo.projetoRelacionado||"",
+        favorito:!!novo.favorito,mostrarNaCentral:!!novo.mostrarNaCentral,proximaAcao:novo.proximaAcao||"",
+        observacoes:novo.observacoes||"",historico:[{data:novo.criadoEm||hoje(),texto:"Atividade criada"}]};
     }
     return novo;
   });
@@ -2255,247 +2302,339 @@ function PageCaixa({db,setDb}){
 
 // ── TAREFAS ──────────────────────────────────────────────────
 // ── WORK (antiga "Tarefas") — centro operacional da empresa ────
-function LinhaTarefaWork({t,onToggle,onStatus,onDelete,onEdit}){
+
+// Card compacto da lista de Execução — 2 linhas, sem inchaço visual.
+function CardExecucao({t,onToggle,onStatus,onDelete,onEdit,onFavoritar}){
   const [h,setH]=useState(false);
   const atrasada=t.status!=="Concluído"&&t.status!=="Cancelado"&&t.prazo&&t.prazo<hoje();
   const feita=t.status==="Concluído";
   return(
-    <div onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)}
-      style={{display:"flex",alignItems:"flex-start",gap:10,padding:"10px 12px",
-        border:`1px solid ${h?"#d1d5db":"#e5e7eb"}`,
-        borderLeft:`4px solid ${feita?"#d1d5db":COR_URGENCIA_WORK[t.urgencia]||"#111"}`,
-        borderRadius:9,background:feita?"#fafafa":"#fff",opacity:t.status==="Cancelado"?0.5:1,
-        transition:"all 0.15s"}}>
-      <button onClick={()=>onToggle(t)} style={{width:20,height:20,borderRadius:6,
+    <div onClick={()=>onEdit(t)} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)}
+      style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",cursor:"pointer",
+        border:`1px solid ${h?"#d1d5db":"#eef0f2"}`,
+        borderLeft:`3px solid ${feita?"#d1d5db":COR_URGENCIA_WORK[t.urgencia]||"#111"}`,
+        borderRadius:8,background:"#fff",opacity:t.status==="Cancelado"?0.55:1,transition:"all 0.12s"}}>
+      <button onClick={e=>{e.stopPropagation();onToggle(t);}} style={{width:19,height:19,borderRadius:6,
         border:`2px solid ${feita?"#16a34a":"#d1d5db"}`,background:feita?"#16a34a":"none",
-        cursor:"pointer",flexShrink:0,marginTop:1,display:"flex",alignItems:"center",
-        justifyContent:"center",color:"#fff",fontSize:11}}>{feita?"✓":""}</button>
-      <div onClick={()=>onEdit(t)} style={{flex:1,minWidth:0,textAlign:"left",cursor:"pointer"}} title="Clique para editar">
-        <div style={{fontWeight:700,fontSize:13.5,color:"#111",textAlign:"left",
-          textDecoration:feita?"line-through":"none"}}>
-          {ICONE_AREA_WORK[t.categoria]} {t.titulo}
+        cursor:"pointer",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",
+        color:"#fff",fontSize:11}}>{feita?"✓":""}</button>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontSize:13.5,fontWeight:600,color:"#111",textAlign:"left",whiteSpace:"nowrap",
+          overflow:"hidden",textOverflow:"ellipsis",textDecoration:feita?"line-through":"none"}}>
+          {t.favorito?"⭐ ":""}{ICONE_AREA_WORK[t.categoria]} {t.titulo}
         </div>
-        {t.descricao&&<div style={{fontSize:12,color:"#9ca3af",marginTop:2,textAlign:"left"}}>{t.descricao}</div>}
-        <div style={{display:"flex",gap:9,marginTop:5,flexWrap:"wrap",alignItems:"center"}}>
-          <span style={{fontSize:11,color:COR_URGENCIA_WORK[t.urgencia],fontWeight:700}}>● {t.urgencia}</span>
-          {t.prazo&&<span style={{fontSize:11,color:atrasada?"#dc2626":"#9ca3af",fontWeight:atrasada?700:400}}>
-            📅 {fmtData(t.prazo)}{atrasada?" · atrasada":""}</span>}
-          {t.recorrencia&&t.recorrencia!=="Nenhuma"&&
-            <span style={{fontSize:11,color:"#2563eb"}}>🔁 {t.recorrencia}</span>}
-          {t.responsavel&&<span style={{fontSize:11,color:"#9ca3af"}}>👤 {t.responsavel}</span>}
-          {t.clienteNome&&<span style={{fontSize:11,color:"#5c2030",fontWeight:600}}>🧾 {t.clienteNome}</span>}
-          {t.origemAuto&&<span style={{fontSize:11,color:"#9333ea"}}>🤖 automática</span>}
-          {t.origemAcademia&&<span style={{fontSize:11,color:"#d4af37"}}>🎓 Academia</span>}
+        <div style={{fontSize:11.5,color:atrasada?"#dc2626":"#9ca3af",fontWeight:atrasada?700:400,
+          marginTop:2,textAlign:"left"}}>
+          {t.categoria} · {t.urgencia} · {t.prazo?fmtData(t.prazo):"sem data"}{atrasada?" · atrasada":""}
         </div>
       </div>
-      <select value={t.status} onClick={e=>e.stopPropagation()} onChange={e=>onStatus(t,e.target.value)}
-        style={{fontSize:11,fontWeight:700,color:COR_STATUS_WORK[t.status],background:"#f9fafb",
-          border:`1px solid ${COR_STATUS_WORK[t.status]}55`,borderRadius:20,padding:"4px 8px",
-          cursor:"pointer",flexShrink:0}}>
-        {STATUS_WORK.map(s=><option key={s} value={s}>{s}</option>)}
-      </select>
-      <div onClick={e=>e.stopPropagation()} style={{display:"flex",gap:4,flexShrink:0}}>
-        <Btn onClick={()=>onEdit(t)}>✎</Btn>
-        <Btn v="danger" onClick={()=>onDelete(t.id)}>✕</Btn>
-      </div>
-    </div>
-  );
-}
-
-function GrupoAreaWork({cat,tarefas,onToggle,onStatus,onDelete,onEdit}){
-  const [expandido,setExpandido]=useState(false);
-  const LIMITE=5;
-  const visiveis=expandido?tarefas:tarefas.slice(0,LIMITE);
-  const resto=tarefas.length-LIMITE;
-  return(
-    <div>
-      <div style={{fontSize:12,fontWeight:800,color:"#6b7280",textTransform:"uppercase",
-        letterSpacing:"0.5px",marginBottom:8}}>{ICONE_AREA_WORK[cat]} {cat} <span style={{color:"#d1d5db"}}>({tarefas.length})</span></div>
-      <div style={{display:"flex",flexDirection:"column",gap:6}}>
-        {visiveis.map(t=><LinhaTarefaWork key={t.id} t={t} onToggle={onToggle} onStatus={onStatus} onDelete={onDelete} onEdit={onEdit}/>)}
-      </div>
-      {resto>0&&(
-        <button onClick={()=>setExpandido(e=>!e)} style={{background:"none",border:"none",
-          color:"#5c2030",fontSize:12,fontWeight:700,cursor:"pointer",padding:"8px 2px 0"}}>
-          {expandido?"Mostrar menos":`Mostrar mais (+${resto})`}
+      <div onClick={e=>e.stopPropagation()} style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
+        <select value={t.status} onChange={e=>onStatus(t,e.target.value)}
+          style={{fontSize:10.5,fontWeight:700,color:COR_STATUS_WORK[t.status],background:"#f9fafb",
+            border:`1px solid ${COR_STATUS_WORK[t.status]}55`,borderRadius:20,padding:"3px 7px",cursor:"pointer"}}>
+          {STATUS_WORK.map(s=><option key={s} value={s}>{s}</option>)}
+        </select>
+        <button onClick={()=>onFavoritar(t)} title="Favoritar" style={{background:"none",border:"none",
+          cursor:"pointer",fontSize:14,color:t.favorito?"#d4af37":"#d1d5db",padding:"0 2px"}}>
+          {t.favorito?"★":"☆"}
         </button>
-      )}
+        <button onClick={()=>onDelete(t.id)} title="Excluir" style={{background:"none",border:"none",
+          cursor:"pointer",fontSize:13,color:"#d1d5db",padding:"0 2px"}}>✕</button>
+      </div>
     </div>
   );
 }
 
 function PageTarefas({db,setDb}){
   const [modal,setModal]=useState(null); // null=fechado, "novo"=criando, {...tarefa}=editando
-  const [abaStatus,setAbaStatus]=useState("todas");
+  const [filtroPrincipal,setFiltroPrincipal]=useState("todas");
   const [catFiltro,setCatFiltro]=useState("Todas");
-  const vazio={titulo:"",descricao:"",categoria:"Operacional",urgencia:"Média",prazo:"",
-    status:"Pendente",responsavel:"",recorrencia:"Nenhuma",recorrenciaDias:7};
+  const [prioFiltro,setPrioFiltro]=useState("Todas");
+  const [dataFiltro,setDataFiltro]=useState(null);
+  const [busca,setBusca]=useState("");
+  const vazio={titulo:"",descricao:"",objetivo:"",categoria:"Operacional",urgencia:"Média",prazo:"",
+    status:"Pendente",responsavel:"",recorrencia:"Nenhuma",recorrenciaDias:7,projetoRelacionado:"",
+    mostrarNaCentral:false,favorito:false,proximaAcao:"",observacoes:"",historico:[]};
   const [f,setF]=useState(vazio);
   const hj=hoje();
 
-  const pendentesUrgentes=db.tarefas.filter(tarefaMereceAtencao).length;
-  const atrasadas=db.tarefas.filter(t=>t.status!=="Concluído"&&t.status!=="Cancelado"&&t.prazo&&t.prazo<hj).length;
-  const emAndamento=db.tarefas.filter(t=>t.status==="Em Andamento").length;
-  const concluidas=db.tarefas.filter(t=>t.status==="Concluído").length;
-  const missaoAuto=missaoAutomaticaDoDia(db);
+  const abertas=db.tarefas.filter(t=>t.status!=="Concluído"&&t.status!=="Cancelado");
+  const urgentesCount=abertas.filter(t=>t.urgencia==="Crítica"||t.urgencia==="Alta").length;
+  const atrasadasCount=abertas.filter(t=>t.prazo&&t.prazo<hj).length;
+  const andamentoCount=db.tarefas.filter(t=>t.status==="Em Andamento").length;
+  const concluidasCount=db.tarefas.filter(t=>t.status==="Concluído").length;
+  const hojeCount=abertas.filter(t=>t.prazo===hj).length;
+  const semana=diasDaSemanaAtual();
+  const semanaCount=abertas.filter(t=>t.prazo&&t.prazo>=semana[0].data&&t.prazo<=semana[6].data).length;
 
-  const ABAS=[
-    {k:"todas",l:`Todas (${db.tarefas.length})`},
-    {k:"Pendente",l:`Pendentes (${db.tarefas.filter(t=>t.status==="Pendente").length})`},
-    {k:"Em Andamento",l:`Em andamento (${emAndamento})`},
-    {k:"Concluído",l:`Concluídas (${concluidas})`},
-    {k:"Cancelado",l:"Canceladas"},
+  const foco=ordenarTarefasPorPrioridade(db.tarefas.filter(tarefaMereceAtencao)).slice(0,3);
+  const proximasAcoes=ordenarTarefasPorPrioridade(abertas.filter(t=>t.prazo&&t.prazo>=hj)).slice(0,6);
+  const backlog=abertas.filter(t=>!t.prazo);
+
+  const INDICADORES=[
+    {k:"urgentes",icon:"🔴",label:"Urgentes",valor:urgentesCount},
+    {k:"atrasadas",icon:"⚠️",label:"Atrasadas",valor:atrasadasCount},
+    {k:"andamento",icon:"🔵",label:"Em andamento",valor:andamentoCount},
+    {k:"concluidas",icon:"🟢",label:"Concluídas",valor:concluidasCount},
+    {k:"hoje",icon:"📅",label:"Hoje",valor:hojeCount},
+    {k:"semana",icon:"📌",label:"Esta semana",valor:semanaCount},
   ];
 
-  const filtradas=db.tarefas.filter(t=>
-    (abaStatus==="todas"||t.status===abaStatus)&&(catFiltro==="Todas"||t.categoria===catFiltro));
-
-  // Painel operacional: uma mini-visão por área fixa, sempre visível — clique
-  // numa área filtra a lista detalhada abaixo, evitando lista longa e única.
-  const painelAreas=CATEGORIAS_WORK.map(area=>({
-    area,
-    tarefas:ordenarTarefasPorPrioridade(db.tarefas.filter(t=>t.categoria===area&&t.status!=="Concluído"&&t.status!=="Cancelado")),
+  const execucao=ordenarTarefasPorPrioridade(db.tarefas.filter(t=>{
+    if(catFiltro!=="Todas"&&t.categoria!==catFiltro)return false;
+    if(prioFiltro!=="Todas"&&t.urgencia!==prioFiltro)return false;
+    if(dataFiltro&&t.prazo!==dataFiltro)return false;
+    if(busca.trim()){
+      const q=busca.trim().toLowerCase();
+      if(!(t.titulo||"").toLowerCase().includes(q)&&!(t.descricao||"").toLowerCase().includes(q))return false;
+    }
+    switch(filtroPrincipal){
+      case"hoje":return t.prazo===hj&&t.status!=="Concluído"&&t.status!=="Cancelado";
+      case"atrasadas":return t.prazo&&t.prazo<hj&&t.status!=="Concluído"&&t.status!=="Cancelado";
+      case"urgentes":return(t.urgencia==="Crítica"||t.urgencia==="Alta")&&t.status!=="Concluído"&&t.status!=="Cancelado";
+      case"andamento":return t.status==="Em Andamento";
+      case"concluidas":return t.status==="Concluído";
+      default:return true;
+    }
   }));
+
+  const ABAS_EXECUCAO=[{k:"todas",l:"Todas"},{k:"hoje",l:"Hoje"},{k:"atrasadas",l:"Atrasadas"},
+    {k:"urgentes",l:"Urgentes"},{k:"andamento",l:"Em andamento"},{k:"concluidas",l:"Concluídas"}];
 
   const abrirNova=()=>{setF(vazio);setModal("novo");};
   const abrirEdicao=t=>{setF({...vazio,...t});setModal(t);};
   const salv=()=>{
     if(!f.titulo.trim())return alert("Informe o título.");
     if(modal&&modal!=="novo"){
-      setDb(prev=>({...prev,tarefas:prev.tarefas.map(t=>t.id===f.id?{...f}:t)}));
+      setDb(prev=>({...prev,tarefas:prev.tarefas.map(t=>t.id===f.id?
+        {...f,historico:registrarHistorico(f,"Atividade editada")}:t)}));
     } else {
-      setDb(prev=>{const id=prev.nextId+1;return{...prev,nextId:id,tarefas:[...prev.tarefas,{...f,id}]};});
+      setDb(prev=>{const id=prev.nextId+1;return{...prev,nextId:id,
+        tarefas:[...prev.tarefas,{...f,id,criadoEm:hoje(),historico:[{data:hoje(),texto:"Atividade criada"}]}]};});
     }
     setF(vazio);setModal(null);
   };
   // Concluir com consciência de recorrência: gera a próxima ocorrência automática.
   const concluir=t=>setDb(prev=>{
-    let tarefas=prev.tarefas.map(x=>x.id===t.id?{...x,status:"Concluído"}:x);
+    let tarefas=prev.tarefas.map(x=>x.id===t.id?
+      {...x,status:"Concluído",historico:registrarHistorico(x,"Marcada como concluída")}:x);
     let nextId=prev.nextId;
     if(t.recorrencia&&t.recorrencia!=="Nenhuma"){
       const prox=proximaOcorrencia(t.prazo,t.recorrencia,t.recorrenciaDias);
       nextId=nextId+1;
-      tarefas=[...tarefas,{...t,id:nextId,status:"Pendente",prazo:prox}];
+      tarefas=[...tarefas,{...t,id:nextId,status:"Pendente",prazo:prox,
+        historico:[{data:hoje(),texto:"Gerada automaticamente pela recorrência"}]}];
     }
     return{...prev,tarefas,nextId};
   });
   const toggle=t=>{
     if(t.status==="Concluído"){
-      setDb(prev=>({...prev,tarefas:prev.tarefas.map(x=>x.id===t.id?{...x,status:"Pendente"}:x)}));
+      setDb(prev=>({...prev,tarefas:prev.tarefas.map(x=>x.id===t.id?
+        {...x,status:"Pendente",historico:registrarHistorico(x,"Reaberta")}:x)}));
     } else concluir(t);
   };
   const mudarStatus=(t,status)=>{
     if(status==="Concluído")concluir(t);
-    else setDb(prev=>({...prev,tarefas:prev.tarefas.map(x=>x.id===t.id?{...x,status}:x)}));
+    else setDb(prev=>({...prev,tarefas:prev.tarefas.map(x=>x.id===t.id?
+      {...x,status,historico:registrarHistorico(x,`Status alterado para "${status}"`)}:x)}));
   };
+  const favoritar=t=>setDb(prev=>({...prev,tarefas:prev.tarefas.map(x=>
+    x.id===t.id?{...x,favorito:!x.favorito}:x)}));
   const del=id=>{if(!window.confirm("Excluir?"))return;setDb(prev=>({...prev,tarefas:prev.tarefas.filter(t=>t.id!==id)}));};
   const salvarMissao=v=>setDb(prev=>({...prev,centralComando:{...prev.centralComando,missao:v}}));
+  const atualizar=()=>setDb(prev=>({...prev}));
 
   return(
     <div>
-      <div style={{background:"#1D1A28",borderRadius:12,padding:"14px 18px",marginBottom:16}}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
-          <span style={{fontSize:11,color:"#a8a5b3",textTransform:"uppercase",letterSpacing:"0.4px"}}>
-            🚩 Missão do dia <span style={{textTransform:"none",fontWeight:400,color:"#6b6878"}}>— aparece na Central</span>
-          </span>
-          {missaoAuto&&<span style={{fontSize:10,color:"#9333ea",fontWeight:700}}>🤖 automática</span>}
+      {/* Header */}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:10}}>
+        <div>
+          <div style={{fontSize:20,fontWeight:800,color:"#111",letterSpacing:"0.3px"}}>WORK</div>
+          <div style={{fontSize:12.5,color:"#9ca3af"}}>Centro operacional da T11</div>
         </div>
-        {missaoAuto?(
-          <div style={{display:"flex",alignItems:"center",gap:8}}>
-            <span style={{width:7,height:7,borderRadius:"50%",flexShrink:0,
-              background:COR_URGENCIA_WORK[missaoAuto.urgencia]}}/>
-            <span style={{flex:1,fontSize:14,color:"#fff",fontWeight:600}}>{missaoAuto.titulo}</span>
-            <button onClick={()=>concluir(missaoAuto)} style={{background:"#274d3a",color:"#7ee0a8",
-              border:"none",borderRadius:5,padding:"4px 11px",fontSize:11,fontWeight:700,
-              cursor:"pointer",flexShrink:0}}>✓ Concluir</button>
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          <Inp value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Buscar atividade..." style={{width:180}}/>
+          <button onClick={atualizar} title="Atualizar" style={{background:"#fff",border:"1px solid #e5e7eb",
+            borderRadius:8,padding:"8px 10px",cursor:"pointer",fontSize:13,color:"#6b7280"}}>🔄</button>
+          <Btn onClick={abrirNova}>+ Nova atividade</Btn>
+        </div>
+      </div>
+
+      {/* Foco de Hoje */}
+      <div style={{background:"#1D1A28",borderRadius:12,padding:"16px 20px",marginBottom:14}}>
+        <div style={{fontSize:11,color:"#a8a5b3",textTransform:"uppercase",letterSpacing:"0.5px",
+          fontWeight:700,marginBottom:10}}>🎯 Foco de hoje</div>
+        {foco.length===0?(
+          <div>
+            <div style={{fontSize:13.5,color:"#5cd680",marginBottom:10}}>✓ Nada crítico ou urgente agora.</div>
+            <div style={{fontSize:10.5,color:"#a8a5b3",marginBottom:4,textTransform:"uppercase"}}>
+              Objetivo do dia (aparece na Central se nada mais urgente surgir)
+            </div>
+            <CampoEditavel valor={db.centralComando.missao} placeholder="Qual sua prioridade hoje?"
+              onSalvar={salvarMissao}/>
           </div>
         ):(
-          <CampoEditavel valor={db.centralComando.missao} placeholder="Qual sua prioridade hoje?"
-            onSalvar={salvarMissao}/>
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {foco.map(t=>{
+              const atrasada=t.prazo&&t.prazo<hj;
+              return(
+                <div key={t.id} style={{display:"flex",alignItems:"center",gap:10,background:"#262233",
+                  borderRadius:9,padding:"10px 12px"}}>
+                  <span style={{width:7,height:7,borderRadius:"50%",flexShrink:0,background:COR_URGENCIA_WORK[t.urgencia]}}/>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:14,fontWeight:700,color:"#fff"}}>{t.titulo}</div>
+                    <div style={{fontSize:11.5,color:"#a8a5b3",marginTop:2}}>
+                      {t.urgencia==="Crítica"?"🔴":"🟠"} {t.urgencia} · {atrasada?"atrasada":t.prazo===hj?"hoje":fmtData(t.prazo)} · 📍 {t.categoria}
+                    </div>
+                  </div>
+                  <button onClick={()=>concluir(t)} style={{background:"#274d3a",color:"#7ee0a8",border:"none",
+                    borderRadius:6,padding:"5px 11px",fontSize:11.5,fontWeight:700,cursor:"pointer",flexShrink:0}}>
+                    ✓ Concluir
+                  </button>
+                </div>
+              );
+            })}
+          </div>
         )}
       </div>
 
-      <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:12,marginBottom:16}}>
-        <KPI label="Urgentes pendentes" value={pendentesUrgentes} color={pendentesUrgentes>0?"#dc2626":"#16a34a"}/>
-        <KPI label="Atrasadas" value={atrasadas} color={atrasadas>0?"#dc2626":"#16a34a"}/>
-        <KPI label="Em andamento" value={emAndamento} color="#2563eb"/>
-        <KPI label="Concluídas" value={concluidas} color="#16a34a"/>
-      </div>
-
-      {/* Painel operacional — uma área por card, foco em execução rápida */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:10,marginBottom:16}}>
-        {painelAreas.map(({area,tarefas})=>(
-          <div key={area} onClick={()=>setCatFiltro(catFiltro===area?"Todas":area)}
-            style={{background:"#fff",border:`1px solid ${catFiltro===area?"#5c2030":"#e5e7eb"}`,
-              borderRadius:10,padding:"12px 14px",cursor:"pointer",transition:"all 0.15s"}}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
-              <span style={{fontSize:12,fontWeight:800,color:"#111"}}>{ICONE_AREA_WORK[area]} {area}</span>
-              <span style={{fontSize:11,fontWeight:700,color:tarefas.length>0?"#5c2030":"#d1d5db",
-                background:"#f9fafb",borderRadius:10,padding:"1px 7px"}}>{tarefas.length}</span>
-            </div>
-            {tarefas.length===0?(
-              <div style={{fontSize:11,color:"#d1d5db"}}>Nada pendente</div>
-            ):(
-              <div style={{display:"flex",flexDirection:"column",gap:4}}>
-                {tarefas.slice(0,3).map(t=>(
-                  <div key={t.id} style={{display:"flex",alignItems:"center",gap:6}}>
-                    <span style={{width:5,height:5,borderRadius:"50%",flexShrink:0,
-                      background:COR_URGENCIA_WORK[t.urgencia]}}/>
-                    <span style={{fontSize:11.5,color:"#374151",whiteSpace:"nowrap",overflow:"hidden",
-                      textOverflow:"ellipsis"}}>{t.titulo}</span>
-                  </div>
-                ))}
-                {tarefas.length>3&&<div style={{fontSize:10.5,color:"#9ca3af"}}>+{tarefas.length-3} mais</div>}
-              </div>
-            )}
+      {/* Resumo operacional — clicável, filtra a Execução */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(6,minmax(0,1fr))",gap:8,marginBottom:14}}>
+        {INDICADORES.map(ind=>(
+          <div key={ind.k} onClick={()=>setFiltroPrincipal(filtroPrincipal===ind.k?"todas":ind.k)}
+            style={{background:"#fff",border:`1px solid ${filtroPrincipal===ind.k?"#5c2030":"#e5e7eb"}`,
+              borderRadius:9,padding:"9px 10px",cursor:"pointer",transition:"all 0.12s"}}>
+            <div style={{fontSize:11,color:"#9ca3af"}}>{ind.icon} {ind.label}</div>
+            <div style={{fontSize:18,fontWeight:800,color:"#111",marginTop:2}}>{ind.valor}</div>
           </div>
         ))}
       </div>
 
-      <Section action={
-        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-          <div style={{width:170}}>
-            <Sel value={catFiltro} onChange={e=>setCatFiltro(e.target.value)}>
-              <option value="Todas">Todas as áreas</option>
-              {CATEGORIAS_WORK.map(c=><option key={c} value={c}>{c}</option>)}
-            </Sel>
-          </div>
-          <Tabs options={ABAS} value={abaStatus} onChange={setAbaStatus}/>
-          <Btn onClick={abrirNova}>+ Atividade</Btn>
-        </div>
-      }>
-        {filtradas.length===0?<Empty msg="Nenhuma atividade por aqui." icon="💻"/>:(
-          <div style={{display:"flex",flexDirection:"column",gap:20}}>
-            {CATEGORIAS_WORK.map(cat=>{
-              const doGrupo=ordenarTarefasPorPrioridade(filtradas.filter(t=>t.categoria===cat));
-              if(doGrupo.length===0)return null;
-              return <GrupoAreaWork key={cat} cat={cat} tarefas={doGrupo} onToggle={toggle} onStatus={mudarStatus} onDelete={del} onEdit={abrirEdicao}/>;
-            })}
-          </div>
-        )}
-      </Section>
+      {/* Áreas — navegação compacta, não cards grandes */}
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:14}}>
+        {CATEGORIAS_WORK.map(area=>{
+          const n=abertas.filter(t=>t.categoria===area).length;
+          const ativo=catFiltro===area;
+          return(
+            <button key={area} onClick={()=>setCatFiltro(ativo?"Todas":area)}
+              style={{background:ativo?"#5c2030":"#fff",color:ativo?"#fff":"#374151",
+                border:`1px solid ${ativo?"#5c2030":"#e5e7eb"}`,borderRadius:20,padding:"6px 13px",
+                fontSize:12.5,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:5}}>
+              {ICONE_AREA_WORK[area]} {area} <span style={{opacity:0.7}}>· {n}</span>
+            </button>
+          );
+        })}
+      </div>
 
-      {modal&&<Modal title={modal==="novo"?"Nova Atividade":"Editar Atividade"} onClose={()=>setModal(null)}>
+      {/* Semana — visão operacional rápida, sem calendário gigante */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,minmax(0,1fr))",gap:6,marginBottom:16}}>
+        {semana.map(dia=>{
+          const n=abertas.filter(t=>t.prazo===dia.data).length;
+          const ativo=dataFiltro===dia.data;
+          const ehHoje=dia.data===hj;
+          return(
+            <button key={dia.data} onClick={()=>setDataFiltro(ativo?null:dia.data)}
+              style={{background:ativo?"#5c2030":"#fff",border:`1px solid ${ehHoje&&!ativo?"#d4af37":ativo?"#5c2030":"#e5e7eb"}`,
+                borderRadius:9,padding:"8px 4px",cursor:"pointer",textAlign:"center"}}>
+              <div style={{fontSize:10,fontWeight:700,color:ativo?"#fff":"#9ca3af"}}>{dia.label}</div>
+              <div style={{fontSize:16,fontWeight:800,color:ativo?"#fff":n>0?"#111":"#d1d5db",marginTop:2}}>{n}</div>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Execução + coluna lateral */}
+      <div style={{display:"grid",gridTemplateColumns:"1.7fr 1fr",gap:16,alignItems:"start"}}>
+        <Section title="EXECUÇÃO" action={
+          <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+            <div style={{width:130}}>
+              <Sel value={prioFiltro} onChange={e=>setPrioFiltro(e.target.value)}>
+                <option value="Todas">Prioridade</option>
+                {URGENCIAS_WORK.map(u=><option key={u} value={u}>{u}</option>)}
+              </Sel>
+            </div>
+            <Tabs options={ABAS_EXECUCAO} value={filtroPrincipal} onChange={setFiltroPrincipal}/>
+          </div>
+        }>
+          {execucao.length===0?<Empty msg="Nenhuma atividade encontrada com esses filtros." icon="💻"/>:(
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              {execucao.map(t=><CardExecucao key={t.id} t={t} onToggle={toggle} onStatus={mudarStatus}
+                onDelete={del} onEdit={abrirEdicao} onFavoritar={favoritar}/>)}
+            </div>
+          )}
+        </Section>
+
+        <div style={{display:"flex",flexDirection:"column",gap:14}}>
+          <Section title="🚀 Próximas Ações">
+            {proximasAcoes.length===0?<div style={{fontSize:13,color:"#9ca3af"}}>Nada agendado por enquanto.</div>:(
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                {proximasAcoes.map(t=>(
+                  <div key={t.id} onClick={()=>abrirEdicao(t)} style={{cursor:"pointer"}}>
+                    <div style={{fontSize:10.5,color:"#9ca3af",textTransform:"uppercase",fontWeight:700}}>{rotuloDia(t.prazo)}</div>
+                    <div style={{fontSize:13,color:"#111",fontWeight:600}}>{t.titulo}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Section>
+
+          <Section title="🗂 Backlog">
+            {backlog.length===0?<div style={{fontSize:13,color:"#9ca3af"}}>Sem ideias em espera.</div>:(
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                {backlog.map(t=>(
+                  <div key={t.id} onClick={()=>abrirEdicao(t)} style={{fontSize:12.5,color:"#374151",
+                    cursor:"pointer",padding:"4px 0"}}>{ICONE_AREA_WORK[t.categoria]} {t.titulo}</div>
+                ))}
+              </div>
+            )}
+          </Section>
+        </div>
+      </div>
+
+      {modal&&<Modal title={modal==="novo"?"Nova Atividade":"Detalhes da Atividade"} onClose={()=>setModal(null)} wide>
         <div style={{display:"flex",flexWrap:"wrap",gap:12}}>
-          <Field label="Título"><Inp value={f.titulo} onChange={e=>setF(p=>({...p,titulo:e.target.value}))}
-            placeholder="O que precisa fazer?" autoFocus/></Field>
+          <Field label="O que precisa ser feito?"><Inp value={f.titulo} onChange={e=>setF(p=>({...p,titulo:e.target.value}))}
+            placeholder="Título" autoFocus/></Field>
+          <Field label="Por quê? (objetivo)"><Inp value={f.objetivo} onChange={e=>setF(p=>({...p,objetivo:e.target.value}))}
+            placeholder="Por que essa atividade importa?"/></Field>
           <Field label="Descrição"><Inp value={f.descricao} onChange={e=>setF(p=>({...p,descricao:e.target.value}))}
             placeholder="Detalhes (opcional)"/></Field>
           <Field label="Área" third><Sel value={f.categoria} onChange={e=>setF(p=>({...p,categoria:e.target.value}))}>
             {CATEGORIAS_WORK.map(c=><option key={c}>{c}</option>)}</Sel></Field>
           <Field label="Prioridade" third><Sel value={f.urgencia} onChange={e=>setF(p=>({...p,urgencia:e.target.value}))}>
             {URGENCIAS_WORK.map(u=><option key={u}>{u}</option>)}</Sel></Field>
-          <Field label="Vencimento" third><Inp type="date" value={f.prazo} onChange={e=>setF(p=>({...p,prazo:e.target.value}))}/></Field>
           <Field label="Status" third><Sel value={f.status} onChange={e=>setF(p=>({...p,status:e.target.value}))}>
             {STATUS_WORK.map(s=><option key={s}>{s}</option>)}</Sel></Field>
+          <Field label="Prazo" third><Inp type="date" value={f.prazo} onChange={e=>setF(p=>({...p,prazo:e.target.value}))}/></Field>
+          <Field label="Projeto relacionado" third><Inp value={f.projetoRelacionado}
+            onChange={e=>setF(p=>({...p,projetoRelacionado:e.target.value}))} placeholder="Opcional"/></Field>
+          <Field label="Mostrar na Central?" third><Sel value={f.mostrarNaCentral?"Sim":"Não"}
+            onChange={e=>setF(p=>({...p,mostrarNaCentral:e.target.value==="Sim"}))}>
+            <option>Não</option><option>Sim</option></Sel></Field>
           <Field label="Recorrência" third><Sel value={f.recorrencia} onChange={e=>setF(p=>({...p,recorrencia:e.target.value}))}>
             {RECORRENCIAS_WORK.map(r=><option key={r}>{r}</option>)}</Sel></Field>
           {f.recorrencia==="Personalizada"&&
             <Field label="A cada quantos dias" third><Inp type="number" min="1" value={f.recorrenciaDias}
               onChange={e=>setF(p=>({...p,recorrenciaDias:Number(e.target.value)||1}))}/></Field>}
+          <Field label="Próxima ação"><Inp value={f.proximaAcao} onChange={e=>setF(p=>({...p,proximaAcao:e.target.value}))}
+            placeholder="Qual o próximo passo concreto?"/></Field>
+          <Field label="Observações"><Inp value={f.observacoes} onChange={e=>setF(p=>({...p,observacoes:e.target.value}))}
+            placeholder="Campo livre"/></Field>
           <Field label="Responsável (em breve)" half><Inp value={f.responsavel}
             onChange={e=>setF(p=>({...p,responsavel:e.target.value}))} placeholder="Ainda de uso pessoal"/></Field>
         </div>
+        {modal!=="novo"&&f.historico&&f.historico.length>0&&(
+          <div style={{marginTop:16,paddingTop:14,borderTop:"1px solid #f0f0f0"}}>
+            <div style={{fontSize:11,color:"#9ca3af",textTransform:"uppercase",fontWeight:700,marginBottom:8}}>Histórico</div>
+            <div style={{display:"flex",flexDirection:"column",gap:4,maxHeight:120,overflowY:"auto"}}>
+              {[...f.historico].reverse().map((h,i)=>(
+                <div key={i} style={{fontSize:12,color:"#6b7280"}}>
+                  <span style={{color:"#9ca3af"}}>{fmtData(h.data)}</span> — {h.texto}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         <MBtns onClose={()=>setModal(null)} onSave={salv}/>
       </Modal>}
     </div>
