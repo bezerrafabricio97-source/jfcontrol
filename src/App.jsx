@@ -58,15 +58,6 @@ function ordenarTarefasPorPrioridade(lista){
     return(a.prazo||"9999-99-99").localeCompare(b.prazo||"9999-99-99");
   });
 }
-// A Missão do Dia nunca fica guardada à parte — é sempre a tarefa mais prioritária
-// (Crítica/Alta), com prazo vencendo hoje ou já vencido, ainda em aberto. Se não
-// houver nenhuma, cai pro objetivo manual definido no Work (fallback).
-function missaoAutomaticaDoDia(db){
-  const candidatas=db.tarefas.filter(t=>
-    (t.status==="Pendente"||t.status==="Em Andamento")&&
-    (t.urgencia==="Crítica"||t.urgencia==="Alta")&&t.prazo&&t.prazo<=hoje());
-  return ordenarTarefasPorPrioridade(candidatas)[0]||null;
-}
 // Acrescenta um evento ao histórico da tarefa (nunca apaga o que já tinha).
 function registrarHistorico(tarefa,texto){
   return[...(tarefa.historico||[]),{data:hoje(),texto}];
@@ -1025,9 +1016,9 @@ function CentralComando({db,setDb,onNavigate,emTransp,atrasados,estoqueCritico,v
   const pSemana=metaSemana>0?Math.min(100,(vendasSemana/metaSemana)*100):0;
   // A Central não guarda nada próprio — tudo aqui é lido de outro módulo (Work,
   // Pedidos, Estoque, Metas). Editar acontece nesses módulos, nunca aqui.
-  const tarefasUrgentes=ordenarTarefasPorPrioridade(db.tarefas.filter(tarefaMereceAtencao));
-  const proximaTarefa=tarefasUrgentes[0]||null;
-  const missaoAuto=missaoAutomaticaDoDia(db);
+  // "Foco de Hoje" usa exatamente a mesma regra do Work (tarefaMereceAtencao),
+  // pra Central e Work nunca mostrarem coisas diferentes pro que "merece atenção".
+  const focoTarefas=ordenarTarefasPorPrioridade(db.tarefas.filter(tarefaMereceAtencao)).slice(0,3);
   const concluirTarefa=t=>setDb(prev=>{
     let tarefas=prev.tarefas.map(x=>x.id===t.id?{...x,status:"Concluído"}:x);
     let nextId=prev.nextId;
@@ -1037,7 +1028,7 @@ function CentralComando({db,setDb,onNavigate,emTransp,atrasados,estoqueCritico,v
     }
     return{...prev,tarefas,nextId};
   });
-  const foco=resolverFocoHoje({atrasados,estoqueCritico,emTransp});
+  const radar=resolverFocoHoje({atrasados,estoqueCritico,emTransp});
   const [hEmT,setHEmT]=useState(false);const [hAtr,setHAtr]=useState(false);const [hEst,setHEst]=useState(false);
   const linhaPendencia=(label,valor,cor,hover,setHover,onClick)=>(
     <div onClick={onClick} onMouseEnter={()=>setHover(true)} onMouseLeave={()=>setHover(false)}
@@ -1056,56 +1047,43 @@ function CentralComando({db,setDb,onNavigate,emTransp,atrasados,estoqueCritico,v
       </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:12}}>
 
-        {/* Foco de Hoje — mensagem automática de prioridade, calculada sozinha */}
-        <div style={{background:foco.fundo,borderLeft:`3px solid ${foco.cor}`,borderRadius:10,
+        {/* Radar Operacional — alerta automático sobre transporte/estoque/atraso */}
+        <div style={{background:radar.fundo,borderLeft:`3px solid ${radar.cor}`,borderRadius:10,
           padding:"12px 16px",gridColumn:"1 / -1",display:"flex",alignItems:"center",gap:10}}>
           <span style={{fontSize:16,flexShrink:0}}>🧭</span>
           <div>
-            <div style={{fontSize:11,color:"#a8a5b3",marginBottom:2}}>Foco de hoje</div>
-            <div style={{fontSize:14,color:"#fff",fontWeight:500}}>{foco.msg}</div>
+            <div style={{fontSize:11,color:"#a8a5b3",marginBottom:2}}>Radar operacional</div>
+            <div style={{fontSize:14,color:"#fff",fontWeight:500}}>{radar.msg}</div>
           </div>
         </div>
 
-        {/* Missão do dia — automática (tarefa Crítica/Alta vencendo) quando existir;
-            senão cai pro objetivo manual, que é editado no Work */}
-        <div style={{background:"#262233",borderRadius:10,padding:"14px 16px",gridColumn:"1 / -1"}}>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6,
-            cursor:"pointer"}} onClick={()=>onNavigate&&onNavigate("tarefas")}>
-            <span style={{fontSize:11,color:"#a8a5b3",textTransform:"uppercase",letterSpacing:"0.4px"}}>
-              🚩 Missão do dia
-            </span>
-            <span style={{fontSize:10,color:"#6b6878"}}>{missaoAuto?"🤖 automática":"editar no Work →"}</span>
-          </div>
-          <div style={{fontSize:14,color:"#fff",fontWeight:500}}>
-            {missaoAuto?missaoAuto.titulo:(db.centralComando.missao||"Nenhuma missão definida ainda")}
-          </div>
-        </div>
-
-        {/* Próxima Ação — a primeira tarefa Alta/Crítica pendente do Work */}
+        {/* Foco de Hoje — mesma lógica do Work (Crítica sempre; Alta perto do prazo
+            ou atrasada; ou marcada manualmente "Mostrar na Central"). Sem foco
+            ativo, cai pro objetivo manual definido no Work. */}
         <div style={{background:"#262233",borderRadius:10,padding:"14px 16px",gridColumn:"1 / -1"}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8,
             cursor:"pointer"}} onClick={()=>onNavigate&&onNavigate("tarefas")}>
             <span style={{fontSize:11,color:"#a8a5b3",textTransform:"uppercase",letterSpacing:"0.4px"}}>
-              📌 Próxima Ação
+              🎯 Foco de Hoje
             </span>
-            {tarefasUrgentes.length>0&&<span style={{fontSize:10,color:"#6b6878"}}>ver tudo no Work →</span>}
+            <span style={{fontSize:10,color:"#6b6878"}}>ver tudo no Work →</span>
           </div>
-          {!proximaTarefa?(
-            <div style={{fontSize:13,color:"#5cd680"}}>✓ Nenhuma tarefa urgente agora</div>
+          {focoTarefas.length===0?(
+            <div style={{fontSize:14,color:"#fff",fontWeight:500}}>
+              {db.centralComando.missao||"Nada urgente agora — sem objetivo definido no Work"}
+            </div>
           ):(
-            <div>
-              <div style={{display:"flex",alignItems:"center",gap:8}}>
-                <span style={{width:7,height:7,borderRadius:"50%",flexShrink:0,
-                  background:COR_URGENCIA_WORK[proximaTarefa.urgencia]}}/>
-                <span style={{flex:1,fontSize:14,color:"#fff",fontWeight:600}}>{proximaTarefa.titulo}</span>
-                <button onClick={()=>concluirTarefa(proximaTarefa)} style={{background:"#274d3a",color:"#7ee0a8",
-                  border:"none",borderRadius:5,padding:"4px 11px",fontSize:11,fontWeight:700,
-                  cursor:"pointer",flexShrink:0}}>✓ Concluir</button>
-              </div>
-              {tarefasUrgentes.length>1&&
-                <div style={{fontSize:11,color:"#6b6878",marginTop:6,marginLeft:15}}>
-                  +{tarefasUrgentes.length-1} outra{tarefasUrgentes.length-1>1?"s":""} urgente{tarefasUrgentes.length-1>1?"s":""} no Work
-                </div>}
+            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              {focoTarefas.map(t=>(
+                <div key={t.id} style={{display:"flex",alignItems:"center",gap:8}}>
+                  <span style={{width:7,height:7,borderRadius:"50%",flexShrink:0,
+                    background:COR_URGENCIA_WORK[t.urgencia]}}/>
+                  <span style={{flex:1,fontSize:14,color:"#fff",fontWeight:600}}>{t.titulo}</span>
+                  <button onClick={()=>concluirTarefa(t)} style={{background:"#274d3a",color:"#7ee0a8",
+                    border:"none",borderRadius:5,padding:"4px 11px",fontSize:11,fontWeight:700,
+                    cursor:"pointer",flexShrink:0}}>✓ Concluir</button>
+                </div>
+              ))}
             </div>
           )}
         </div>
@@ -1366,7 +1344,7 @@ function PageDashboard({db,setDb,onNavigate}){
   const margAtual=receb>0?r(((receb-cus)/receb)*100):null;
   const produzir=db.pedidos.filter(p=>p.status==="A Fazer"&&!isEstoque(p)).length;
   const entregue=db.pedidos.filter(p=>p.status==="Entregue"&&p.data?.startsWith(mesSel)).length;
-  const tarefasHj=db.tarefas.filter(t=>!t.feita&&t.data===hoje()).length;
+  const tarefasHj=db.tarefas.filter(t=>t.status!=="Concluído"&&t.status!=="Cancelado"&&t.prazo===hoje()).length;
   const vendas={};db.pedidos.forEach(p=>{const k=`${p.time||p.camisa} ${p.tamanho}`;vendas[k]=(vendas[k]||0)+(p.qtd||1);});
   const topVendas=Object.entries(vendas).sort((a,b)=>b[1]-a[1]).slice(0,5);
   const now=new Date();
@@ -1435,6 +1413,59 @@ function PageDashboard({db,setDb,onNavigate}){
             </div>
           );
         })}
+      </div>
+
+      {/* Visão geral — CRM e Academia, clicáveis, levam pra tela completa */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:14}}>
+        {(()=>{
+          const clientesTotal=db.clientes.length;
+          const clientesAtivos90=db.clientes.filter(c=>situacaoRecenciaCliente(c,db.pedidos)==="Ativo").length;
+          const clientesRecorrentes=db.clientes.filter(c=>pedidosDoCliente(c,db.pedidos).length>=2).length;
+          const clientesDevendo=db.clientes.filter(c=>(c.valorEmAberto||0)>0).length;
+          return(
+            <div onClick={()=>onNavigate&&onNavigate("crm")} style={{background:"#fff",border:"1px solid #e5e7eb",
+              borderRadius:10,padding:"16px 18px",cursor:"pointer",transition:"all 0.15s"}}>
+              <div style={{fontSize:12,fontWeight:800,color:"#6b7280",textTransform:"uppercase",
+                letterSpacing:"0.4px",marginBottom:12}}>👥 CRM</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:8}}>
+                {[["Clientes",clientesTotal,"#111"],["Ativos (90d)",clientesAtivos90,"#16a34a"],
+                  ["Recorrentes",clientesRecorrentes,"#2563eb"],["Devendo",clientesDevendo,clientesDevendo>0?"#dc2626":"#16a34a"]]
+                  .map(([lbl,val,cor])=>(
+                  <div key={lbl}>
+                    <div style={{fontSize:19,fontWeight:800,color:cor}}>{val}</div>
+                    <div style={{fontSize:10.5,color:"#9ca3af",marginTop:2}}>{lbl}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
+        {(()=>{
+          const nivel=calcularNivelAcademia(db.academia.xp);
+          const modulosConcluidos=db.academia.modulos.filter(m=>m.aulas.length>0&&m.aulas.every(a=>a.concluida)).length;
+          return(
+            <div onClick={()=>onNavigate&&onNavigate("academia")} style={{background:"#fff",border:"1px solid #e5e7eb",
+              borderRadius:10,padding:"16px 18px",cursor:"pointer",transition:"all 0.15s"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                <div style={{fontSize:12,fontWeight:800,color:"#6b7280",textTransform:"uppercase",
+                  letterSpacing:"0.4px"}}>🎓 Academia</div>
+                <div style={{fontSize:11,fontWeight:700,color:"#d4af37"}}>{nivel.titulo}</div>
+              </div>
+              <div style={{height:6,background:"#f3f4f6",borderRadius:4,overflow:"hidden",marginBottom:10}}>
+                <div style={{width:`${nivel.progresso}%`,height:"100%",background:"#d4af37"}}/>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:8}}>
+                {[["XP",db.academia.xp,"#111"],["Sequência",`${db.academia.diasConsecutivos||0}d`,"#f97316"],
+                  ["Módulos",`${modulosConcluidos}/${db.academia.modulos.length}`,"#16a34a"]].map(([lbl,val,cor])=>(
+                  <div key={lbl}>
+                    <div style={{fontSize:16,fontWeight:800,color:cor}}>{val}</div>
+                    <div style={{fontSize:10.5,color:"#9ca3af",marginTop:2}}>{lbl}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* Pedidos do mês — aparece ANTES dos KPIs mensais */}
