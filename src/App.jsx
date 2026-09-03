@@ -58,6 +58,17 @@ function ordenarTarefasPorPrioridade(lista){
     return(a.prazo||"9999-99-99").localeCompare(b.prazo||"9999-99-99");
   });
 }
+// ── OBJETIVOS — tarefa especial com etapas em sequência (o "mapa" do usuário) ──
+// Só uma etapa "existe" por vez: a primeira ainda não concluída. As de trás
+// ficam como histórico, as de frente ficam bloqueadas até chegar a vez delas.
+function proximaEtapaPendente(etapas){
+  return(etapas||[]).find(e=>!e.concluida)||null;
+}
+function progressoEtapas(etapas){
+  const total=(etapas||[]).length;
+  const feitas=(etapas||[]).filter(e=>e.concluida).length;
+  return{feitas,total};
+}
 // Acrescenta um evento ao histórico da tarefa (nunca apaga o que já tinha).
 function registrarHistorico(tarefa,texto){
   return[...(tarefa.historico||[]),{data:hoje(),texto}];
@@ -437,7 +448,8 @@ const DB0={produtos:[],pedidos:[],caixa:[],tarefas:[],pedidosFornecedor:[],clien
   academia:{xp:0,diasConsecutivos:0,ultimoEstudo:null,tempoTotalMin:0,modulos:TRILHA_ACADEMIA_BASE},
   meta:{pedidos:30,receita:3600,lucro:1500,posts:0,futebol:0},
   centralComando:{missao:"Conseguir pelo menos 1 venda hoje",
-    filaAcoes:["Postar camisa do Bahia às 19h","Conferir pagamentos pendentes","Atualizar estoque"]},
+    filaAcoes:["Postar camisa do Bahia às 19h","Conferir pagamentos pendentes","Atualizar estoque"],
+    objetivoAtivoId:null},
   // Índice segue Date.getDay(): 0=Domingo ... 6=Sábado.
   // Guardado no db (não hardcoded no componente) pra poder virar editável no futuro
   // sem precisar reescrever a tela — só trocar esses textos.
@@ -532,7 +544,8 @@ function migrarDB(db){
     if(novo.historico===undefined){
       novo={...novo,objetivo:novo.objetivo||"",projetoRelacionado:novo.projetoRelacionado||"",
         favorito:!!novo.favorito,mostrarNaCentral:!!novo.mostrarNaCentral,proximaAcao:novo.proximaAcao||"",
-        observacoes:novo.observacoes||"",historico:[{data:novo.criadoEm||hoje(),texto:"Atividade criada"}]};
+        observacoes:novo.observacoes||"",etapas:novo.etapas||[],
+        historico:[{data:novo.criadoEm||hoje(),texto:"Atividade criada"}]};
     }
     return novo;
   });
@@ -1029,6 +1042,19 @@ function CentralComando({db,setDb,onNavigate,emTransp,atrasados,estoqueCritico,v
     return{...prev,tarefas,nextId};
   });
   const radar=resolverFocoHoje({atrasados,estoqueCritico,emTransp});
+  // Objetivo Ativo: tarefas com etapas viram "objetivos". Só um fica em destaque
+  // na Central por vez — o usuário escolhe qual, e só a etapa atual aparece aqui.
+  const objetivosDisponiveis=db.tarefas.filter(t=>t.etapas&&t.etapas.length>0);
+  const objetivoAtivo=objetivosDisponiveis.find(t=>t.id===db.centralComando.objetivoAtivoId)||null;
+  const trocarObjetivo=id=>setDb(prev=>({...prev,centralComando:{...prev.centralComando,
+    objetivoAtivoId:id?Number(id):null}}));
+  const concluirEtapaAtiva=()=>{
+    if(!objetivoAtivo)return;
+    const proxima=proximaEtapaPendente(objetivoAtivo.etapas);
+    if(!proxima)return;
+    setDb(prev=>({...prev,tarefas:prev.tarefas.map(t=>t.id!==objetivoAtivo.id?t:
+      {...t,etapas:t.etapas.map(e=>e.id===proxima.id?{...e,concluida:true}:e)})}));
+  };
   const [hEmT,setHEmT]=useState(false);const [hAtr,setHAtr]=useState(false);const [hEst,setHEst]=useState(false);
   const linhaPendencia=(label,valor,cor,hover,setHover,onClick)=>(
     <div onClick={onClick} onMouseEnter={()=>setHover(true)} onMouseLeave={()=>setHover(false)}
@@ -1101,6 +1127,41 @@ function CentralComando({db,setDb,onNavigate,emTransp,atrasados,estoqueCritico,v
               ()=>onNavigate&&onNavigate("estoque",null,null))}
           </div>
         </div>
+
+        {objetivosDisponiveis.length>0&&(
+          <div style={{background:"#262233",borderRadius:10,padding:"14px 16px",gridColumn:"1 / -1"}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+              <span style={{fontSize:11,color:"#a8a5b3",textTransform:"uppercase",letterSpacing:"0.4px"}}>
+                🗺️ Objetivo Ativo
+              </span>
+              <select value={objetivoAtivo?.id||""} onChange={e=>trocarObjetivo(e.target.value)}
+                style={{fontSize:11,fontWeight:600,color:"#c9c6d3",background:"#1D1A28",
+                  border:"1px solid #3a3550",borderRadius:8,padding:"3px 8px",cursor:"pointer",maxWidth:150}}>
+                <option value="">Trocar objetivo...</option>
+                {objetivosDisponiveis.map(t=><option key={t.id} value={t.id}>{t.titulo}</option>)}
+              </select>
+            </div>
+            {!objetivoAtivo?(
+              <div style={{fontSize:13,color:"#6b6878"}}>Escolha um objetivo acima pra acompanhar a etapa atual aqui.</div>
+            ):(()=>{
+              const proxima=proximaEtapaPendente(objetivoAtivo.etapas);
+              const{feitas,total}=progressoEtapas(objetivoAtivo.etapas);
+              if(!proxima)return<div style={{fontSize:14,color:"#5cd680",fontWeight:600}}>🎉 Objetivo concluído — {objetivoAtivo.titulo}!</div>;
+              return(
+                <div>
+                  <div style={{fontSize:12,color:"#a8a5b3",marginBottom:4}}>{objetivoAtivo.titulo} · {feitas}/{total} etapas</div>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{flex:1,fontSize:14,color:"#fff",fontWeight:600}}>{proxima.titulo}</span>
+                    <button onClick={concluirEtapaAtiva} style={{background:"#274d3a",color:"#7ee0a8",
+                      border:"none",borderRadius:5,padding:"4px 11px",fontSize:11,fontWeight:700,
+                      cursor:"pointer",flexShrink:0}}>✓ Concluir</button>
+                  </div>
+                  {proxima.porque&&<div style={{fontSize:11.5,color:"#a8a5b3",marginTop:3}}>{proxima.porque}</div>}
+                </div>
+              );
+            })()}
+          </div>
+        )}
 
         <div style={{background:"#262233",borderRadius:10,padding:"14px 16px",gridColumn:"1 / -1"}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
@@ -2335,6 +2396,116 @@ function PageCaixa({db,setDb}){
 // ── WORK (antiga "Tarefas") — centro operacional da empresa ────
 
 // Card compacto da lista de Execução — 2 linhas, sem inchaço visual.
+// ── DIAGRAMA DO OBJETIVO — nós conectados, um passo de cada vez ────
+function NoEtapa({etapa,index,estado,onToggle,onEditar,onRemover,onSubir,onDescer,ultimo}){
+  // estado: "feita" | "atual" | "futura"
+  const [editando,setEditando]=useState(false);
+  const [titulo,setTitulo]=useState(etapa.titulo);
+  const [porque,setPorque]=useState(etapa.porque);
+  const [h,setH]=useState(false);
+  const cores={feita:{bola:"#16a34a",texto:"#9ca3af",linha:"#16a34a"},
+    atual:{bola:"#5c2030",texto:"#111",linha:"#d1d5db"},
+    futura:{bola:"#fff",texto:"#9ca3af",linha:"#d1d5db"}};
+  const c=cores[estado];
+  const salvar=()=>{onEditar(etapa.id,{titulo:titulo.trim()||etapa.titulo,porque:porque.trim()});setEditando(false);};
+  return(
+    <div style={{display:"flex",gap:12}} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)}>
+      <div style={{display:"flex",flexDirection:"column",alignItems:"center",flexShrink:0}}>
+        <button onClick={()=>onToggle(etapa.id)} title={estado==="feita"?"Desmarcar":"Marcar como concluída"}
+          style={{width:estado==="atual"?30:26,height:estado==="atual"?30:26,borderRadius:"50%",
+            background:estado==="futura"?"#fff":c.bola,border:`2px solid ${c.bola}`,color:estado==="futura"?"#d1d5db":"#fff",
+            display:"flex",alignItems:"center",justifyContent:"center",fontSize:estado==="atual"?13:12,
+            fontWeight:700,cursor:"pointer",flexShrink:0,
+            boxShadow:estado==="atual"?"0 0 0 4px #5c203022":"none",transition:"all 0.15s"}}>
+          {estado==="feita"?"✓":index+1}
+        </button>
+        {!ultimo&&<div style={{width:2,flex:1,minHeight:26,
+          background:estado==="feita"?c.linha:"repeating-linear-gradient(to bottom,#d1d5db 0 4px,transparent 4px 8px)"}}/>}
+      </div>
+      <div style={{flex:1,paddingBottom:18,minWidth:0}}>
+        {editando?(
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            <input value={titulo} onChange={e=>setTitulo(e.target.value)} autoFocus
+              style={{...INP,fontWeight:700,fontSize:13.5}} placeholder="Título da etapa"/>
+            <input value={porque} onChange={e=>setPorque(e.target.value)}
+              style={{...INP,fontSize:12}} placeholder="Por quê? (o que essa etapa destrava)"/>
+            <div style={{display:"flex",gap:6}}>
+              <Btn onClick={salvar}>Salvar</Btn>
+              <Btn v="danger" onClick={()=>setEditando(false)}>Cancelar</Btn>
+            </div>
+          </div>
+        ):(
+          <div onClick={()=>setEditando(true)} style={{cursor:"pointer"}}>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <span style={{fontWeight:estado==="atual"?800:600,fontSize:estado==="atual"?14:13.5,
+                color:c.texto,textDecoration:estado==="feita"?"line-through":"none"}}>{etapa.titulo}</span>
+              {estado==="atual"&&<span style={{fontSize:10,fontWeight:700,color:"#5c2030",
+                background:"#faf5f6",borderRadius:10,padding:"1px 8px",flexShrink:0}}>ETAPA ATUAL</span>}
+            </div>
+            {etapa.porque&&<div style={{fontSize:11.5,color:estado==="futura"?"#d1d5db":"#9ca3af",marginTop:2}}>{etapa.porque}</div>}
+            {h&&(
+              <div style={{display:"flex",gap:10,marginTop:6}}>
+                <button onClick={e=>{e.stopPropagation();onSubir(etapa.id);}} style={{background:"none",border:"none",
+                  color:"#9ca3af",fontSize:11,cursor:"pointer",padding:0}}>↑ subir</button>
+                <button onClick={e=>{e.stopPropagation();onDescer(etapa.id);}} style={{background:"none",border:"none",
+                  color:"#9ca3af",fontSize:11,cursor:"pointer",padding:0}}>↓ descer</button>
+                <button onClick={e=>{e.stopPropagation();onRemover(etapa.id);}} style={{background:"none",border:"none",
+                  color:"#dc2626",fontSize:11,cursor:"pointer",padding:0}}>remover</button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DiagramaObjetivo({etapas,onMudar}){
+  const [novaEtapa,setNovaEtapa]=useState("");
+  const idx=etapas.findIndex(e=>!e.concluida);
+
+  const toggle=id=>{
+    const i=etapas.findIndex(e=>e.id===id);
+    onMudar(etapas.map((e,j)=>j===i?{...e,concluida:!e.concluida}:e));
+  };
+  const editar=(id,patch)=>onMudar(etapas.map(e=>e.id===id?{...e,...patch}:e));
+  const remover=id=>onMudar(etapas.filter(e=>e.id!==id));
+  const mover=(id,dir)=>{
+    const i=etapas.findIndex(e=>e.id===id);
+    const j=i+dir;
+    if(j<0||j>=etapas.length)return;
+    const nova=[...etapas];
+    [nova[i],nova[j]]=[nova[j],nova[i]];
+    onMudar(nova);
+  };
+  const adicionar=()=>{
+    if(!novaEtapa.trim())return;
+    const proxId=(etapas.reduce((m,e)=>Math.max(m,e.id),0)||0)+1;
+    onMudar([...etapas,{id:proxId,titulo:novaEtapa.trim(),porque:"",concluida:false}]);
+    setNovaEtapa("");
+  };
+
+  return(
+    <div>
+      {etapas.length>0&&(
+        <div style={{marginBottom:10}}>
+          {etapas.map((e,i)=>(
+            <NoEtapa key={e.id} etapa={e} index={i} ultimo={i===etapas.length-1}
+              estado={e.concluida?"feita":i===idx?"atual":"futura"}
+              onToggle={toggle} onEditar={editar} onRemover={remover} onSubir={id=>mover(id,-1)} onDescer={id=>mover(id,1)}/>
+          ))}
+        </div>
+      )}
+      <div style={{display:"flex",gap:8}}>
+        <input value={novaEtapa} onChange={e=>setNovaEtapa(e.target.value)}
+          onKeyDown={e=>{if(e.key==="Enter")adicionar();}}
+          placeholder="+ nova etapa" style={{...INP,fontSize:12.5,padding:"7px 10px"}}/>
+        <Btn onClick={adicionar}>Add</Btn>
+      </div>
+    </div>
+  );
+}
+
 function CardExecucao({t,onToggle,onStatus,onDelete,onEdit,onFavoritar}){
   const [h,setH]=useState(false);
   const atrasada=t.status!=="Concluído"&&t.status!=="Cancelado"&&t.prazo&&t.prazo<hoje();
@@ -2357,6 +2528,7 @@ function CardExecucao({t,onToggle,onStatus,onDelete,onEdit,onFavoritar}){
         <div style={{fontSize:11.5,color:atrasada?"#dc2626":"#9ca3af",fontWeight:atrasada?700:400,
           marginTop:2,textAlign:"left"}}>
           {t.categoria} · {t.urgencia} · {t.prazo?fmtData(t.prazo):"sem data"}{atrasada?" · atrasada":""}
+          {t.etapas&&t.etapas.length>0&&` · 🗺️ ${progressoEtapas(t.etapas).feitas}/${progressoEtapas(t.etapas).total}`}
         </div>
       </div>
       <div onClick={e=>e.stopPropagation()} style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
@@ -2385,7 +2557,7 @@ function PageTarefas({db,setDb}){
   const [busca,setBusca]=useState("");
   const vazio={titulo:"",descricao:"",objetivo:"",categoria:"Operacional",urgencia:"Média",prazo:"",
     status:"Pendente",responsavel:"",recorrencia:"Nenhuma",recorrenciaDias:7,projetoRelacionado:"",
-    mostrarNaCentral:false,favorito:false,proximaAcao:"",observacoes:"",historico:[]};
+    mostrarNaCentral:false,favorito:false,proximaAcao:"",observacoes:"",historico:[],etapas:[]};
   const [f,setF]=useState(vazio);
   const hj=hoje();
 
@@ -2654,6 +2826,25 @@ function PageTarefas({db,setDb}){
           <Field label="Responsável (em breve)" half><Inp value={f.responsavel}
             onChange={e=>setF(p=>({...p,responsavel:e.target.value}))} placeholder="Ainda de uso pessoal"/></Field>
         </div>
+
+        <div style={{marginTop:16,paddingTop:14,borderTop:"1px solid #f0f0f0"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+            <div style={{fontSize:11,color:"#9ca3af",textTransform:"uppercase",fontWeight:700}}>
+              🗺️ Etapas do objetivo <span style={{textTransform:"none",fontWeight:400}}>(opcional — vira um mapa de passos)</span>
+            </div>
+            {modal!=="novo"&&f.etapas&&f.etapas.length>0&&(
+              <button onClick={()=>setDb(prev=>({...prev,centralComando:{...prev.centralComando,
+                objetivoAtivoId:prev.centralComando.objetivoAtivoId===f.id?null:f.id}}))}
+                style={{background:"none",border:"1px solid #e5e7eb",borderRadius:20,padding:"3px 11px",
+                  fontSize:11,fontWeight:700,cursor:"pointer",
+                  color:db.centralComando.objetivoAtivoId===f.id?"#5c2030":"#9ca3af"}}>
+                {db.centralComando.objetivoAtivoId===f.id?"★ Objetivo ativo na Central":"☆ Definir como ativo na Central"}
+              </button>
+            )}
+          </div>
+          <DiagramaObjetivo etapas={f.etapas||[]} onMudar={etapas=>setF(p=>({...p,etapas}))}/>
+        </div>
+
         {modal!=="novo"&&f.historico&&f.historico.length>0&&(
           <div style={{marginTop:16,paddingTop:14,borderTop:"1px solid #f0f0f0"}}>
             <div style={{fontSize:11,color:"#9ca3af",textTransform:"uppercase",fontWeight:700,marginBottom:8}}>Histórico</div>
