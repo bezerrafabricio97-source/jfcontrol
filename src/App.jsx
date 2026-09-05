@@ -193,8 +193,45 @@ function calcularIndicadoresOperacionais(db){
   const metaSemana=db.meta.pedidos>0?Math.max(1,Math.round(db.meta.pedidos/4)):7;
   return{emTransp,atrasados,estoqueCritico,vendasSemana,metaSemana};
 }
+// Indicadores comerciais pro Radar Comercial da Central. Usa a mesma fórmula de
+// lucro já validada no Custo/Lucro (recebido - custo total, nunca faturamento
+// projetado) — não recria a regra financeira, só reaplica no mês atual.
+function calcularIndicadoresComerciais(db){
+  const m=mesAtual();
+  const pedidosMes=db.pedidos.filter(p=>!isEstoque(p)&&p.data?.startsWith(m));
+  const vendasMes=pedidosMes.length;
+  const recebidoMes=r(pedidosMes.reduce((a,p)=>a+(p.valorRecebido||0),0));
+  const custoMes=r(pedidosMes.reduce((a,p)=>a+((p.custoProduto||0)+(p.custoTaxa||0))*(p.qtd||1),0))
+    +r(db.caixa.filter(c=>c.tipo==="Saída"&&c.data?.startsWith(m)).reduce((a,c)=>a+(c.valor||0),0));
+  const lucroMes=r(recebidoMes-custoMes);
+  const aguardandoPagamento=db.pedidos.filter(p=>!isEstoque(p)&&
+    r((p.precoVenda||0)*(p.qtd||1)-(p.valorRecebido||0))>0).length;
+  const interessados=db.clientes.filter(c=>c.estagioComercial==="Interessado"||c.estagioComercial==="Lead").length;
+  const followUpsPendentes=db.tarefas.filter(t=>t.categoria==="CRM"&&t.status!=="Concluído"&&t.status!=="Cancelado").length;
+  const recompras=db.clientes.filter(c=>pedidosDoCliente(c,db.pedidos).length>0&&situacaoRecenciaCliente(c,db.pedidos)==="Inativo").length;
+  return{vendasMes,recebidoMes,lucroMes,aguardandoPagamento,interessados,followUpsPendentes,recompras};
+}
+// Camada de recomendação inteligente — SEM IA, só regras sobre dados reais.
+// Preparado pra uso futuro (ex: um painel de "insights"); não é renderizado em
+// lugar nenhum ainda, propositalmente, pra não empilhar mais uma seção na Central agora.
+function gerarRecomendacoes(db,comercial){
+  const rec=[];
+  const ultimaVenda=db.pedidos.filter(p=>!isEstoque(p)&&p.data).reduce((max,p)=>p.data>max?p.data:max,"");
+  const diasSemVenda=ultimaVenda?diasDesde(ultimaVenda):null;
+  if(diasSemVenda!==null&&diasSemVenda>=3)rec.push(`Você está há ${diasSemVenda} dias sem registrar venda.`);
+  if(comercial.followUpsPendentes>0)rec.push(`Existem ${comercial.followUpsPendentes} follow-ups pendentes no Work.`);
+  const estoqueCriticoQtd=db.produtos.filter(p=>(p.qtd||0)<=1).length;
+  if(estoqueCriticoQtd>0)rec.push(`Existem ${estoqueCriticoQtd} produtos com estoque crítico.`);
+  const metaLucro=db.meta.lucro||0;
+  if(metaLucro>0&&comercial.lucroMes<metaLucro*0.5)rec.push("Seu objetivo mensal de lucro ainda está distante.");
+  if(comercial.recompras>0)rec.push(`Você possui ${comercial.recompras} clientes sem comprar há mais de 90 dias.`);
+  return rec;
+}
 // ── CRM — helpers de negócio ────────────────────────────────────
 const ORIGENS_CLIENTE=["Futebol","Grupo WhatsApp","Indicação","Instagram","Facebook","TikTok","Cliente antigo","Outro"];
+// Estágio comercial: onde a pessoa está no caminho até virar cliente (e recliente).
+const ESTAGIOS_COMERCIAIS=["Lead","Interessado","Cliente"];
+const COR_ESTAGIO_COMERCIAL={Lead:"#9ca3af",Interessado:"#ca8a04",Cliente:"#16a34a"};
 const STATUS_CLIENTE=["Ativo","Inativo","Bloqueado"];
 const SITUACAO_PAGAMENTO=["Bom Pagador","Neutro","Atenção"];
 const COR_SITUACAO_PAGAMENTO={"Bom Pagador":"#16a34a",Neutro:"#9ca3af","Atenção":"#dc2626"};
@@ -508,7 +545,8 @@ function migrarDB(db){
     status: ST_PEDIDO.includes(p.status) ? p.status : (STATUS_MIGRACAO[p.status]||"A Fazer"),
   }));
   out.caixa=out.caixa||[];
-  out.clientes=Array.isArray(out.clientes)?out.clientes:[];
+  out.clientes=Array.isArray(out.clientes)?out.clientes.map(c=>c.estagioComercial?c:
+    {...c,estagioComercial:pedidosDoCliente(c,out.pedidos||[]).length>0?"Cliente":"Interessado"}):[];
   if(!out.academia||!Array.isArray(out.academia.modulos)){
     out.academia={...DB0.academia};
   } else {
@@ -549,6 +587,33 @@ function migrarDB(db){
     }
     return novo;
   });
+  // Seed único: projeto "Reativação do Grupo", pedido explicitamente pelo
+  // Fabrício. Usa o mesmo sistema de Objetivo/Etapas do Work — não cria nada
+  // paralelo. Roda só uma vez (confere por origemKey antes de criar).
+  if(!out.tarefas.some(t=>t.origemKey==="seed-reativacao-grupo")){
+    const proxId=(out.tarefas.reduce((m,t)=>Math.max(m,t.id),0)||out.nextId||100)+1;
+    const et=(id,titulo,porque)=>({id,titulo,porque,concluida:false});
+    out.tarefas=[...out.tarefas,{
+      id:proxId,titulo:"📣 Reativação do Grupo",
+      descricao:"Transformar o grupo do WhatsApp de vitrine parada em canal de vendas de verdade.",
+      objetivo:"Interação → Interesse → Conversa → Venda → Pós-venda → Recompra",
+      categoria:"Marketing",urgencia:"Alta",prazo:hoje(),status:"Pendente",responsavel:"",
+      recorrencia:"Nenhuma",recorrenciaDias:null,projetoRelacionado:"",mostrarNaCentral:false,
+      favorito:false,proximaAcao:"",observacoes:"",criadoEm:hoje(),origemKey:"seed-reativacao-grupo",
+      historico:[{data:hoje(),texto:"Objetivo criado"}],
+      etapas:[
+        et(1,"Criar enquete de futebol","Enquete é o jeito mais fácil de fazer alguém parado interagir"),
+        et(2,"Criar batalha (times/jogadores)","Batalha gera comentário e engajamento maior que post comum"),
+        et(3,"Publicar conteúdo de futebol","Mantém o grupo vivo entre uma venda e outra"),
+        et(4,"Publicar produto relacionado ao assunto","Conecta o interesse por futebol com o que você vende"),
+        et(5,"Identificar pessoas interessadas","Sem saber quem reagiu, não tem quem abordar depois"),
+        et(6,"Fazer follow-up no privado","A venda acontece na conversa individual, não no grupo"),
+        et(7,"Registrar interessados no CRM","Se não registrar, esquece e perde a venda depois"),
+        et(8,"Registrar vendas geradas","É o que prova se a ação de marketing funcionou"),
+        et(9,"Avaliar resultado","Decide se repete a mesma tática ou tenta outra"),
+      ],
+    }];
+  }
   out.pedidosFornecedor=out.pedidosFornecedor||[];
   out.meta={...DB0.meta,...(out.meta||{})};
   out.centralComando={...DB0.centralComando,...(out.centralComando||{})};
@@ -1019,18 +1084,23 @@ function CampoEditavel({valor,onSalvar,placeholder}){
 // Prioridade: atrasado > estoque crítico > em transporte > tudo em dia.
 // Extensível: no futuro dá pra entrar aqui cobranças pendentes, campanhas etc,
 // sem precisar mexer em nada do componente CentralComando.
-function resolverFocoHoje({atrasados,estoqueCritico,emTransp}){
-  if(atrasados>0)return{msg:`Resolver ${atrasados} pedido${atrasados>1?"s":""} atrasado${atrasados>1?"s":""} — tem cliente esperando`,cor:"#e05c5c",fundo:"#241a1e"};
-  if(estoqueCritico>0)return{msg:`Repor ${estoqueCritico} ite${estoqueCritico>1?"ns":"m"} de estoque crítico antes que perca uma venda`,cor:"#e6a23c",fundo:"#24201a"};
-  if(emTransp>0)return{msg:`Acompanhar ${emTransp} pedido${emTransp>1?"s":""} em transporte`,cor:"#7dd3c0",fundo:"#1a2422"};
-  return{msg:"Tudo em dia — hora de buscar novas vendas!",cor:"#5cd680",fundo:"#1a241d"};
+// Missão de Hoje: cascata de prioridade comercial. Sempre usa dados reais —
+// nunca um número inventado. Ordem: vendas > CRM/follow-up > financeiro > estoque
+// > tarefa prioritária do Work > marketing planejado > objetivo manual (último recurso).
+function resolverMissaoDeHoje({vendasMes,followUpsPendentes,aguardandoPagamento,estoqueCritico,focoTarefas,temaHoje,missaoManual}){
+  const mesNome=(()=>{const n=new Date().toLocaleDateString("pt-BR",{month:"long"});return n.charAt(0).toUpperCase()+n.slice(1);})();
+  if(vendasMes===0)return{texto:`Gerar a primeira venda de ${mesNome}`,cor:"#e05c5c",fundo:"#241a1e",icone:"🔴"};
+  if(followUpsPendentes>0)return{texto:`Fazer follow-ups pendentes (${followUpsPendentes})`,cor:"#7dd3c0",fundo:"#1a2422",icone:"📣"};
+  if(aguardandoPagamento>0)return{texto:`Receber pagamentos pendentes (${aguardandoPagamento})`,cor:"#e6a23c",fundo:"#24201a",icone:"💰"};
+  if(estoqueCritico>0)return{texto:`Resolver estoque crítico (${estoqueCritico} ite${estoqueCritico>1?"ns":"m"})`,cor:"#e6a23c",fundo:"#24201a",icone:"⚙️"};
+  if(focoTarefas.length>0)return{texto:focoTarefas[0].titulo,cor:COR_URGENCIA_WORK[focoTarefas[0].urgencia]||"#5cd680",fundo:"#1a241d",icone:"🟡"};
+  if(temaHoje)return{texto:`Ação de marketing de hoje: ${temaHoje}`,cor:"#5cd680",fundo:"#1a241d",icone:"📣"};
+  return{texto:missaoManual||"Definir a próxima ação comercial",cor:"#5cd680",fundo:"#1a241d",icone:"🎯"};
 }
 function CentralComando({db,setDb,onNavigate,emTransp,atrasados,estoqueCritico,vendasSemana,metaSemana}){
   const pSemana=metaSemana>0?Math.min(100,(vendasSemana/metaSemana)*100):0;
   // A Central não guarda nada próprio — tudo aqui é lido de outro módulo (Work,
-  // Pedidos, Estoque, Metas). Editar acontece nesses módulos, nunca aqui.
-  // "Foco de Hoje" usa exatamente a mesma regra do Work (tarefaMereceAtencao),
-  // pra Central e Work nunca mostrarem coisas diferentes pro que "merece atenção".
+  // Pedidos, Estoque, CRM, Metas). Editar acontece nesses módulos, nunca aqui.
   const focoTarefas=ordenarTarefasPorPrioridade(db.tarefas.filter(tarefaMereceAtencao)).slice(0,3);
   const concluirTarefa=t=>setDb(prev=>{
     let tarefas=prev.tarefas.map(x=>x.id===t.id?{...x,status:"Concluído"}:x);
@@ -1041,7 +1111,14 @@ function CentralComando({db,setDb,onNavigate,emTransp,atrasados,estoqueCritico,v
     }
     return{...prev,tarefas,nextId};
   });
-  const radar=resolverFocoHoje({atrasados,estoqueCritico,emTransp});
+  const comercial=calcularIndicadoresComerciais(db);
+  const temaHoje=db.calendarioComercial?.[new Date().getDay()]||"";
+  const missao=resolverMissaoDeHoje({vendasMes:comercial.vendasMes,followUpsPendentes:comercial.followUpsPendentes,
+    aguardandoPagamento:comercial.aguardandoPagamento,estoqueCritico,focoTarefas,temaHoje,
+    missaoManual:db.centralComando.missao});
+  const metaLucro=db.meta.lucro||0;
+  const faltaMeta=r(metaLucro-comercial.lucroMes);
+  const pMeta=metaLucro>0?Math.max(0,Math.min(100,(comercial.lucroMes/metaLucro)*100)):0;
   // Objetivo Ativo: tarefas com etapas viram "objetivos". Só um fica em destaque
   // na Central por vez — o usuário escolhe qual, e só a etapa atual aparece aqui.
   const objetivosDisponiveis=db.tarefas.filter(t=>t.etapas&&t.etapas.length>0);
@@ -1073,58 +1150,82 @@ function CentralComando({db,setDb,onNavigate,emTransp,atrasados,estoqueCritico,v
       </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:12}}>
 
-        {/* Radar Operacional — alerta automático sobre transporte/estoque/atraso */}
-        <div style={{background:radar.fundo,borderLeft:`3px solid ${radar.cor}`,borderRadius:10,
+        {/* 🎯 Missão de Hoje — sempre no topo, cascata de prioridade comercial */}
+        <div style={{background:missao.fundo,borderLeft:`3px solid ${missao.cor}`,borderRadius:10,
           padding:"12px 16px",gridColumn:"1 / -1",display:"flex",alignItems:"center",gap:10}}>
-          <span style={{fontSize:16,flexShrink:0}}>🧭</span>
-          <div>
-            <div style={{fontSize:11,color:"#a8a5b3",marginBottom:2}}>Radar operacional</div>
-            <div style={{fontSize:14,color:"#fff",fontWeight:500}}>{radar.msg}</div>
+          <span style={{fontSize:16,flexShrink:0}}>{missao.icone}</span>
+          <div style={{flex:1}}>
+            <div style={{fontSize:11,color:"#a8a5b3",marginBottom:2}}>Missão de hoje</div>
+            <div style={{fontSize:14,color:"#fff",fontWeight:600}}>{missao.texto}</div>
+          </div>
+          {focoTarefas.length>0&&missao.texto===focoTarefas[0].titulo&&
+            <button onClick={()=>concluirTarefa(focoTarefas[0])} style={{background:"#274d3a",color:"#7ee0a8",
+              border:"none",borderRadius:5,padding:"4px 11px",fontSize:11,fontWeight:700,
+              cursor:"pointer",flexShrink:0}}>✓ Concluir</button>}
+        </div>
+
+        {/* 🛒 Radar Comercial — a prioridade #1 da operação hoje é vender */}
+        <div style={{background:"#262233",borderRadius:10,padding:"14px 16px",gridColumn:"1 / -1"}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8,
+            cursor:"pointer"}} onClick={()=>onNavigate&&onNavigate("crm")}>
+            <span style={{fontSize:11,color:"#a8a5b3",textTransform:"uppercase",letterSpacing:"0.4px"}}>
+              🛒 Radar Comercial
+            </span>
+            <span style={{fontSize:10,color:"#6b6878"}}>ver CRM →</span>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:10}}>
+            {[["Interessados",comercial.interessados],["Follow-ups",comercial.followUpsPendentes],
+              ["Recompras",comercial.recompras],["Aguard. pagamento",comercial.aguardandoPagamento],
+              ["Vendas no mês",comercial.vendasMes],["Lucro no mês",brl(comercial.lucroMes)]].map(([lbl,val])=>(
+              <div key={lbl}>
+                <div style={{fontSize:16,fontWeight:800,color:"#fff"}}>{val}</div>
+                <div style={{fontSize:10,color:"#8a8794",marginTop:2}}>{lbl}</div>
+              </div>
+            ))}
           </div>
         </div>
 
-        {/* Foco de Hoje — mesma lógica do Work (Crítica sempre; Alta perto do prazo
-            ou atrasada; ou marcada manualmente "Mostrar na Central"). Sem foco
-            ativo, cai pro objetivo manual definido no Work. */}
-        <div style={{background:"#262233",borderRadius:10,padding:"14px 16px",gridColumn:"1 / -1"}}>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8,
-            cursor:"pointer"}} onClick={()=>onNavigate&&onNavigate("tarefas")}>
-            <span style={{fontSize:11,color:"#a8a5b3",textTransform:"uppercase",letterSpacing:"0.4px"}}>
-              🎯 Foco de Hoje
-            </span>
-            <span style={{fontSize:10,color:"#6b6878"}}>ver tudo no Work →</span>
-          </div>
-          {focoTarefas.length===0?(
-            <div style={{fontSize:14,color:"#fff",fontWeight:500}}>
-              {db.centralComando.missao||"Nada urgente agora — sem objetivo definido no Work"}
+        {/* 📋 Destaques do Work — até 3 tarefas que merecem atenção agora (Crítica,
+            Alta perto do prazo/atrasada, ou marcada manualmente). As demais tarefas
+            antigas continuam só no Work, sem dominar a Central. */}
+        {focoTarefas.length>0&&(
+          <div style={{background:"#262233",borderRadius:10,padding:"14px 16px",gridColumn:"1 / -1"}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8,
+              cursor:"pointer"}} onClick={()=>onNavigate&&onNavigate("tarefas")}>
+              <span style={{fontSize:11,color:"#a8a5b3",textTransform:"uppercase",letterSpacing:"0.4px"}}>
+                📋 Destaques do Work
+              </span>
+              <span style={{fontSize:10,color:"#6b6878"}}>ver tudo no Work →</span>
             </div>
-          ):(
             <div style={{display:"flex",flexDirection:"column",gap:8}}>
               {focoTarefas.map(t=>(
                 <div key={t.id} style={{display:"flex",alignItems:"center",gap:8}}>
                   <span style={{width:7,height:7,borderRadius:"50%",flexShrink:0,
                     background:COR_URGENCIA_WORK[t.urgencia]}}/>
-                  <span style={{flex:1,fontSize:14,color:"#fff",fontWeight:600}}>{t.titulo}</span>
+                  <span style={{flex:1,fontSize:13,color:"#fff",fontWeight:600}}>{t.titulo}</span>
                   <button onClick={()=>concluirTarefa(t)} style={{background:"#274d3a",color:"#7ee0a8",
-                    border:"none",borderRadius:5,padding:"4px 11px",fontSize:11,fontWeight:700,
-                    cursor:"pointer",flexShrink:0}}>✓ Concluir</button>
+                    border:"none",borderRadius:5,padding:"3px 10px",fontSize:11,fontWeight:700,
+                    cursor:"pointer",flexShrink:0}}>✓</button>
                 </div>
               ))}
             </div>
-          )}
-        </div>
-
-        <div style={{background:"#262233",borderRadius:10,padding:"14px 16px",gridColumn:"1 / -1"}}>
-          <div style={{fontSize:11,color:"#a8a5b3",marginBottom:8,textTransform:"uppercase",letterSpacing:"0.4px"}}>
-            📦 Pendências
           </div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:4}}>
-            {linhaPendencia("Em transporte",emTransp,"#fff",hEmT,setHEmT,
-              ()=>onNavigate&&onNavigate("pedidos","Em Transporte",null))}
-            {linhaPendencia("Atrasados",atrasados,atrasados>0?"#e05c5c":"#5cd680",hAtr,setHAtr,
-              ()=>onNavigate&&onNavigate("pedidos","__atrasados__",null))}
-            {linhaPendencia("Estoque crítico",estoqueCritico,estoqueCritico>0?"#e05c5c":"#5cd680",hEst,setHEst,
-              ()=>onNavigate&&onNavigate("estoque",null,null))}
+        )}
+
+        {/* 💰 Meta do Mês — lucro, não quantidade de pedidos */}
+        <div style={{background:"#262233",borderRadius:10,padding:"14px 16px",gridColumn:"1 / -1"}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+            <span style={{fontSize:11,color:"#a8a5b3",textTransform:"uppercase",letterSpacing:"0.4px"}}>
+              💰 Meta do Mês (Lucro)
+            </span>
+            <span style={{fontSize:13,fontWeight:700,color:"#fff"}}>{brl(comercial.lucroMes)} / {brl(metaLucro)}</span>
+          </div>
+          <div style={{width:"100%",height:6,background:"#2c2838",borderRadius:4,overflow:"hidden",marginBottom:8}}>
+            <div style={{width:`${pMeta}%`,height:"100%",background:"#5c2030"}}/>
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",fontSize:11.5,color:"#a8a5b3"}}>
+            <span>{faltaMeta>0?`Falta ${brl(faltaMeta)}`:"Meta batida! 🎉"}</span>
+            <span>{comercial.vendasMes} vendas no mês</span>
           </div>
         </div>
 
@@ -1163,15 +1264,18 @@ function CentralComando({db,setDb,onNavigate,emTransp,atrasados,estoqueCritico,v
           </div>
         )}
 
+        {/* ⚙️ Pendências operacionais — importante, mas abaixo do comercial */}
         <div style={{background:"#262233",borderRadius:10,padding:"14px 16px",gridColumn:"1 / -1"}}>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
-            <span style={{fontSize:11,color:"#a8a5b3",textTransform:"uppercase",letterSpacing:"0.4px"}}>
-              🏆 Meta da semana
-            </span>
-            <span style={{fontSize:13,fontWeight:700,color:"#fff"}}>{vendasSemana} / {metaSemana} vendas</span>
+          <div style={{fontSize:11,color:"#a8a5b3",marginBottom:8,textTransform:"uppercase",letterSpacing:"0.4px"}}>
+            ⚙️ Pendências Operacionais
           </div>
-          <div style={{width:"100%",height:6,background:"#2c2838",borderRadius:4,overflow:"hidden"}}>
-            <div style={{width:`${pSemana}%`,height:"100%",background:"#5c2030"}}/>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:4}}>
+            {linhaPendencia("Em transporte",emTransp,"#fff",hEmT,setHEmT,
+              ()=>onNavigate&&onNavigate("pedidos","Em Transporte",null))}
+            {linhaPendencia("Atrasados",atrasados,atrasados>0?"#e05c5c":"#5cd680",hAtr,setHAtr,
+              ()=>onNavigate&&onNavigate("pedidos","__atrasados__",null))}
+            {linhaPendencia("Estoque crítico",estoqueCritico,estoqueCritico>0?"#e05c5c":"#5cd680",hEst,setHEst,
+              ()=>onNavigate&&onNavigate("estoque",null,null))}
           </div>
         </div>
       </div>
@@ -2087,6 +2191,7 @@ function PagePedidos({db,onAdd,onEdit,onDelete,onUpdateMeta,statusInicial,mesIni
         <div style={{display:"flex",flexWrap:"wrap",gap:12}}>
           <Field label="Meta de Pedidos"><Inp type="number" min="0" value={mt.pedidos} onChange={e=>setMt(m=>({...m,pedidos:parseInt(e.target.value)||0}))}/></Field>
           <Field label="Meta de Faturamento (R$)"><Inp type="number" min="0" step="0.01" value={mt.receita} onChange={e=>setMt(m=>({...m,receita:parseFloat(e.target.value)||0}))}/></Field>
+          <Field label="Meta de Lucro (R$) — usada na Central"><Inp type="number" min="0" step="0.01" value={mt.lucro} onChange={e=>setMt(m=>({...m,lucro:parseFloat(e.target.value)||0}))}/></Field>
         </div>
         <MBtns onClose={()=>setMm(false)} onSave={()=>{onUpdateMeta(mt);setMm(false);}} label="Salvar Meta"/>
       </Modal>}
@@ -3093,7 +3198,7 @@ function PageEcossistema({db,setDb}){
 }
 // ── CRM — cadastro de clientes, histórico e linha do tempo ──────
 const CLIENTE_VAZIO={nome:"",telefone:"",cidade:"",instagram:"",observacoes:"",origem:"Futebol",
-  status:"Ativo",creditoLimite:0,valorEmAberto:0,situacaoPagamento:"Neutro"};
+  status:"Ativo",creditoLimite:0,valorEmAberto:0,situacaoPagamento:"Neutro",estagioComercial:"Interessado"};
 
 function ModalCliente({inicial,onClose,onSave}){
   const [f,setF]=useState(inicial?{...CLIENTE_VAZIO,...inicial}:{...CLIENTE_VAZIO});
@@ -3112,6 +3217,8 @@ function ModalCliente({inicial,onClose,onSave}){
         <Field label="Instagram (opcional)" third><Inp value={f.instagram} onChange={e=>s("instagram",e.target.value)} placeholder="@usuario"/></Field>
         <Field label="Origem" third><Sel value={f.origem} onChange={e=>s("origem",e.target.value)}>
           {ORIGENS_CLIENTE.map(o=><option key={o}>{o}</option>)}</Sel></Field>
+        <Field label="Estágio comercial" third><Sel value={f.estagioComercial} onChange={e=>s("estagioComercial",e.target.value)}>
+          {ESTAGIOS_COMERCIAIS.map(o=><option key={o}>{o}</option>)}</Sel></Field>
         <Field label="Observações"><Inp value={f.observacoes} onChange={e=>s("observacoes",e.target.value)}
           placeholder='Ex: "Prefere tamanho G", "Paga no Pix"'/></Field>
         <Field label="Status" third><Sel value={f.status} onChange={e=>s("status",e.target.value)}>
@@ -3193,7 +3300,12 @@ function PageClienteDetalhe({cliente,db,setDb,onVoltar,onNavigate}){
       <div style={{background:"#fff",border:"1px solid #e5e7eb",borderRadius:12,padding:"18px 20px",marginBottom:16}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:12,marginBottom:16}}>
           <div>
-            <div style={{fontSize:20,fontWeight:800,color:"#111"}}>{cliente.nome}</div>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <div style={{fontSize:20,fontWeight:800,color:"#111"}}>{cliente.nome}</div>
+              <span style={{fontSize:11,fontWeight:700,color:COR_ESTAGIO_COMERCIAL[cliente.estagioComercial],
+                background:"#f9fafb",border:`1px solid ${COR_ESTAGIO_COMERCIAL[cliente.estagioComercial]}55`,
+                borderRadius:20,padding:"2px 9px"}}>{cliente.estagioComercial}</span>
+            </div>
             <div style={{fontSize:13,color:"#6b7280",marginTop:4}}>
               {cliente.telefone&&<>📞 {cliente.telefone} · </>}Status: <b>{cliente.status}</b>
             </div>
@@ -3304,11 +3416,19 @@ function PageCRM({db,setDb,onNavigate}){
   const recorrentes=db.clientes.filter(c=>compras(c)>=2).length;
   const novosNoMes=db.clientes.filter(c=>(c.criadoEm||"").startsWith(mesAtual())).length;
 
-  const FILTROS=[{k:"todos",l:"Todos"},{k:"ativos",l:"Ativos"},{k:"inativos",l:"Inativos"},
-    {k:"vip",l:"VIP"},{k:"devendo",l:"Devendo"},{k:"recorrentes",l:"Recorrentes"}];
+  // "Quem preciso chamar hoje" — leads/interessados ainda não convertidos, e
+  // clientes que já compraram mas sumiram (candidatos a recompra).
+  const chamarHoje=[
+    ...db.clientes.filter(c=>c.estagioComercial==="Lead"||c.estagioComercial==="Interessado"),
+    ...db.clientes.filter(c=>c.estagioComercial==="Cliente"&&situacaoRecenciaCliente(c,db.pedidos)==="Inativo"),
+  ].slice(0,6);
+
+  const FILTROS=[{k:"todos",l:"Todos"},{k:"leads",l:"Leads/Interessados"},{k:"ativos",l:"Ativos"},
+    {k:"inativos",l:"Inativos"},{k:"vip",l:"VIP"},{k:"devendo",l:"Devendo"},{k:"recorrentes",l:"Recorrentes"}];
 
   const filtrados=db.clientes.filter(c=>{
     const s=situacaoRecenciaCliente(c,db.pedidos);
+    if(filtro==="leads"&&c.estagioComercial==="Cliente")return false;
     if(filtro==="ativos"&&s!=="Ativo")return false;
     if(filtro==="inativos"&&s!=="Inativo")return false;
     if(filtro==="vip"&&compras(c)<5)return false;
@@ -3344,6 +3464,28 @@ function PageCRM({db,setDb,onNavigate}){
         <KPI label="🆕 Novos no mês" value={novosNoMes} color="#d4af37"/>
       </div>
 
+      {chamarHoje.length>0&&(
+        <Section title="📞 Quem chamar hoje">
+          <table style={{width:"100%",borderCollapse:"collapse"}}>
+            <tbody>
+              {chamarHoje.map(c=>(
+                <HRow key={c.id} onClick={()=>setSelecionado(c.id)}>
+                  <td style={{...TDSM,fontWeight:700,color:"#111",width:"30%"}}>{c.nome}</td>
+                  <td style={TDSM}>
+                    <span style={{fontSize:11,fontWeight:700,color:COR_ESTAGIO_COMERCIAL[c.estagioComercial],
+                      background:"#f9fafb",border:`1px solid ${COR_ESTAGIO_COMERCIAL[c.estagioComercial]}55`,
+                      borderRadius:20,padding:"2px 9px"}}>{c.estagioComercial}</span>
+                  </td>
+                  <td style={{...TDSM,color:"#9ca3af"}}>
+                    {c.estagioComercial==="Cliente"?"Sem comprar há mais de 90 dias":"Ainda não converteu — fazer follow-up"}
+                  </td>
+                </HRow>
+              ))}
+            </tbody>
+          </table>
+        </Section>
+      )}
+
       <Section action={
         <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
           <Inp value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Nome ou telefone..."
@@ -3355,7 +3497,7 @@ function PageCRM({db,setDb,onNavigate}){
         {filtrados.length===0?<Empty msg="Nenhum cliente encontrado." icon="👥"/>:(
           <table style={{width:"100%",borderCollapse:"collapse"}}>
             <thead><tr>
-              <th style={TDSM_TH}>Nome</th><th style={TDSM_TH}>Origem</th>
+              <th style={TDSM_TH}>Nome</th><th style={TDSM_TH}>Estágio</th><th style={TDSM_TH}>Origem</th>
               <th style={TDSM_TH}>Última compra</th><th style={TDSM_TH}>Compras</th><th style={TDSM_TH}>Situação</th>
             </tr></thead>
             <tbody>{filtrados.map(c=>{
@@ -3365,6 +3507,10 @@ function PageCRM({db,setDb,onNavigate}){
               return(
                 <HRow key={c.id} onClick={()=>setSelecionado(c.id)}>
                   <td style={{...TDSM,fontWeight:700,color:"#111"}}>{c.nome}</td>
+                  <td style={TDSM}>
+                    <span style={{fontSize:10.5,fontWeight:700,color:COR_ESTAGIO_COMERCIAL[c.estagioComercial]}}>
+                      {c.estagioComercial}</span>
+                  </td>
                   <td style={TDSM}>{c.origem}</td>
                   <td style={TDSM}>{dias===null?"—":`${dias} dias`}</td>
                   <td style={TDSM}>{compras(c)}</td>
@@ -4068,6 +4214,7 @@ export default function App(){
           const id=(prev.clientes.reduce((m,c)=>Math.max(m,c.id),0)||0)+1;
           const novo={id,nome:f.cliente,telefone:f.telefone||"",cidade:"",instagram:"",observacoes:"",
             origem:"Outro",status:"Ativo",creditoLimite:0,valorEmAberto:0,situacaoPagamento:"Neutro",
+            estagioComercial:"Cliente",
             criadoEm:hoje(),timeline:[{id:1,data:hoje(),texto:"Cliente cadastrado a partir de um pedido"}]};
           return{...prev,clientes:[...prev.clientes,novo]};
         });
