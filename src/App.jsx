@@ -1484,9 +1484,9 @@ function PageCentralWork({db,setDb,onNavigate}){
   return(
     <div style={{display:"flex",flexDirection:"column",gap:10}}>
       <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:2}}>
-        <div style={{width:30,height:30,borderRadius:8,background:"#fff",border:"1px solid #eee",
-          display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,padding:3}}>
-          <img src={LOGO_T11_BOLA} alt="T11 Sports" style={{width:"100%",height:"100%",objectFit:"contain"}}/>
+        <div style={{background:"#17151F",borderRadius:8,padding:"5px 10px",display:"flex",
+          alignItems:"center",flexShrink:0}}>
+          <img src={LOGO_T11_WORDMARK} alt="T11 Sports" style={{height:20,width:"auto",objectFit:"contain",display:"block"}}/>
         </div>
         <div style={{fontSize:13,color:"#9ca3af"}}>Seu ambiente de trabalho do dia a dia</div>
       </div>
@@ -3996,7 +3996,7 @@ function Sidebar({page,setPage,onLogout,open,onCloseMobile,escuro,setEscuro}){
       <div style={{padding:"12px 12px 10px",borderBottom:"1px solid #24212e"}}>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
           <div style={{lineHeight:1.2,display:"flex",flexDirection:"column",justifyContent:"center",minWidth:0}}>
-            <img src={LOGO_T11_WORDMARK} alt="T11 Sports" style={{height:28,width:"auto",objectFit:"contain",display:"block"}}/>
+            <img src={LOGO_T11_WORDMARK} alt="T11 Sports" style={{height:40,width:"auto",objectFit:"contain",display:"block"}}/>
           </div>
         </div>
       </div>
