@@ -1522,6 +1522,14 @@ function PageDashboard({db,setDb,onNavigate}){
     return nome.charAt(0).toUpperCase()+nome.slice(1);
   })();
   const{emTransp,atrasados}=calcularIndicadoresOperacionais(db);
+  // TOTAL A RECEBER (toda a operação) — mesma lógica já usada no "A Receber" do
+  // mês (faturamento - recebido), só que sem filtrar por mesSel. Não mexe em
+  // nenhum cálculo existente, só reaplica a mesma fórmula num escopo maior.
+  const pedidosTodos=db.pedidos.filter(p=>!isEstoque(p));
+  const fatTodos=pedidosTodos.reduce((a,p)=>a+(p.precoVenda||0)*(p.qtd||1),0);
+  const recebTodos=pedidosTodos.reduce((a,p)=>a+(p.valorRecebido||0),0);
+  const aReceberTotal=r(fatTodos-recebTodos);
+  const aReceberAnteriores=r(aReceberTotal-pend);
   const metasAtivas=[
     {label:"Pedidos",atual:pm.length,meta:db.meta.pedidos,fmtFn:v=>String(v),color:"#2563eb"},
     {label:"Faturamento",atual:fat,meta:db.meta.receita,fmtFn:brl,color:"#16a34a"},
@@ -1687,6 +1695,25 @@ function PageDashboard({db,setDb,onNavigate}){
           <KPI label="Ticket Médio" value={brl(pm.length>0?r(fat/pm.length):0)}/>
         </div>
       </Section>
+
+      {/* 💰 TOTAL A RECEBER — card novo, sozinho, cobre toda a operação (não só o mês) */}
+      <div style={{background:"#fff",border:"1px solid #e5e7eb",borderRadius:12,padding:"20px 24px"}}>
+        <div style={{fontSize:12,fontWeight:800,color:"#6b7280",textTransform:"uppercase",
+          letterSpacing:"0.4px",marginBottom:10}}>💰 Total a Receber</div>
+        <div style={{fontSize:34,fontWeight:900,color:aReceberTotal>0?"#ca8a04":"#16a34a",
+          lineHeight:1,marginBottom:14}}>{brl(aReceberTotal)}</div>
+        <div style={{display:"flex",gap:28,flexWrap:"wrap",alignItems:"center"}}>
+          <div>
+            <div style={{fontSize:11,color:"#9ca3af"}}>Atual</div>
+            <div style={{fontSize:16,fontWeight:700,color:"#111"}}>{brl(pend)}</div>
+          </div>
+          <div>
+            <div style={{fontSize:11,color:"#9ca3af"}}>Anteriores</div>
+            <div style={{fontSize:16,fontWeight:700,color:"#111"}}>{brl(aReceberAnteriores)}</div>
+          </div>
+          <div style={{fontSize:11,color:"#b0aeb6",marginLeft:"auto"}}>Toda a operação</div>
+        </div>
+      </div>
 
       {/* Metas */}
       <Section title="🎯 Metas">
